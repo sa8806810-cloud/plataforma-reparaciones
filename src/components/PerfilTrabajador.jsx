@@ -15,6 +15,7 @@ import {
   X
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { formatSupabaseError } from '../lib/formatSupabaseError';
 
 const HABILIDADES = [
   'Electricidad',
@@ -116,7 +117,7 @@ export default function PerfilTrabajador({
         setExperiencias(resultado.experiencias);
       })
       .catch((loadError) => {
-        if (montado) setError(`No se pudo cargar el perfil profesional: ${loadError.message}`);
+        if (montado) setError(`No se pudo cargar el perfil profesional: ${formatSupabaseError(loadError)}`);
       })
       .finally(() => {
         if (montado) setCargando(false);
@@ -172,7 +173,7 @@ export default function PerfilTrabajador({
       setPerfil((actual) => ({ ...data, verificado: actual.verificado }));
       setAviso('Perfil profesional guardado.');
     } catch (saveError) {
-      setError(`No se pudo guardar el perfil: ${saveError.message}`);
+      setError(`No se pudo guardar el perfil: ${formatSupabaseError(saveError)}`);
     } finally {
       setGuardando(false);
     }
@@ -228,7 +229,7 @@ export default function PerfilTrabajador({
       setAviso(experienciaForm.id ? 'Experiencia actualizada.' : 'Experiencia agregada.');
       await refrescarExperiencias();
     } catch (saveError) {
-      setError(`No se pudo guardar la experiencia: ${saveError.message}`);
+      setError(`No se pudo guardar la experiencia: ${formatSupabaseError(saveError)}`);
     } finally {
       setGuardando(false);
     }
@@ -260,7 +261,7 @@ export default function PerfilTrabajador({
       setExperiencias((actuales) => actuales.filter((item) => item.id !== experiencia.id));
       setAviso('Experiencia eliminada.');
     } catch (deleteError) {
-      setError(`No se pudo eliminar la experiencia: ${deleteError.message}`);
+      setError(`No se pudo eliminar la experiencia: ${formatSupabaseError(deleteError)}`);
     } finally {
       setGuardando(false);
     }

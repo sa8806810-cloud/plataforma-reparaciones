@@ -18,14 +18,17 @@ import {
 } from 'lucide-react';
 import './App.css';
 import { supabase } from './lib/supabaseClient';
+import { formatSupabaseError } from './lib/formatSupabaseError';
+import { DEFAULT_SITE_CONFIG, normalizeSiteConfig } from './lib/siteConfig';
 
 const SolicitarReparacion = lazy(() => import('./components/SolicitarReparacion'));
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const TrabajosTecnico = lazy(() => import('./components/TrabajosTecnico'));
 const MisSolicitudes = lazy(() => import('./components/MisSolicitudes'));
-const PanelAdministrador = lazy(() => import('./components/PanelAdministrador'));
+const PanelAdministrador = lazy(() => import('./components/AdminControlCenter'));
 const DirectorioTecnicos = lazy(() => import('./components/DirectorioTecnicos'));
 const PerfilTrabajador = lazy(() => import('./components/PerfilTrabajador'));
+const SupportChat = lazy(() => import('./components/SupportChat'));
 
 const SERVICIOS_DESTACADOS = [
   {
@@ -99,8 +102,14 @@ export default function App() {
     usuarioId: null,
     rol: '',
     nombre: '',
+    estadoCuenta: 'activo',
+    suspensionHasta: null,
+    motivoSancion: '',
+    errorEstadoCuenta: '',
     error: ''
   });
+  const [configuracionSitio, setConfiguracionSitio] = useState(DEFAULT_SITE_CONFIG);
+  const [errorConfiguracion, setErrorConfiguracion] = useState('');
   const [avisoSesion, setAvisoSesion] = useState('');
   const [adminAccess, setAdminAccess] = useState({
     usuarioId: null,
@@ -146,35 +155,102 @@ export default function App() {
   useEffect(() => {
     if (!usuarioId) return undefined;
     let montado = true;
-    supabase
-      .from('perfiles')
-      .select('rol, nombre')
-      .eq('user_id', usuarioId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!montado) return;
+    const cargarPerfil = async () => {
+      const { data, error } = await supabase
+        .from('perfiles')
+        .select('rol, nombre')
+        .eq('user_id', usuarioId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('No se encontró el perfil de esta cuenta.');
+
+      if (!montado) return;
+      setPerfilUsuario({
+        usuarioId,
+        rol: data.rol || '',
+        nombre: data.nombre || '',
+        estadoCuenta: 'activo',
+        suspensionHasta: null,
+        motivoSancion: '',
+        errorEstadoCuenta: '',
+        error: ''
+      });
+    };
+
+    cargarPerfil().catch((error) => {
+      if (montado) {
         setPerfilUsuario({
           usuarioId,
-          rol: data?.rol || '',
-          nombre: data?.nombre || '',
-          error: error?.message || (!data ? 'No se encontró el perfil de esta cuenta.' : '')
+          rol: '',
+          nombre: '',
+          estadoCuenta: 'activo',
+          suspensionHasta: null,
+          motivoSancion: '',
+          errorEstadoCuenta: '',
+          error: formatSupabaseError(error)
         });
-      })
-      .catch((error) => {
-        if (montado) {
-          setPerfilUsuario({
-            usuarioId,
-            rol: '',
-            nombre: '',
-            error: error.message
-          });
-        }
-      });
+      }
+    });
 
     return () => {
       montado = false;
     };
   }, [usuarioId]);
+
+  useEffect(() => {
+    if (!usuarioId || perfilUsuario.usuarioId !== usuarioId) return undefined;
+    let montado = true;
+    const cargarEstadoCuenta = async () => {
+      const { data, error } = await supabase.rpc('mi_estado_cuenta');
+      if (error) throw error;
+      const estado = data?.[0] || {};
+      if (!montado) return;
+      setPerfilUsuario((actual) => actual.usuarioId === usuarioId
+        ? {
+            ...actual,
+            estadoCuenta: estado.estado_cuenta || 'activo',
+            suspensionHasta: estado.suspension_hasta || null,
+            motivoSancion: estado.motivo_sancion || '',
+            errorEstadoCuenta: ''
+          }
+        : actual
+      );
+    };
+    const revisar = () => {
+      cargarEstadoCuenta().catch((error) => {
+        if (montado) {
+          setPerfilUsuario((actual) => actual.usuarioId === usuarioId
+            ? { ...actual, errorEstadoCuenta: formatSupabaseError(error) }
+            : actual
+          );
+        }
+      });
+    };
+    revisar();
+    const intervalo = window.setInterval(revisar, 10000);
+    return () => {
+      montado = false;
+      window.clearInterval(intervalo);
+    };
+  }, [perfilUsuario.usuarioId, usuarioId]);
+
+  useEffect(() => {
+    let montado = true;
+    supabase
+      .from('configuracion_sitio')
+      .select('configuracion')
+      .eq('id', 1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!montado) return;
+        if (error) throw error;
+        if (data?.configuracion) setConfiguracionSitio(normalizeSiteConfig(data.configuracion));
+      })
+      .catch((error) => {
+        if (montado) setErrorConfiguracion(formatSupabaseError(error));
+      });
+    return () => { montado = false; };
+  }, []);
 
   useEffect(() => {
     if (!usuarioId || !tecnicoSolicitante) {
@@ -385,6 +461,16 @@ export default function App() {
     tecnicoSolicitante &&
     estadoAprobacion.usuarioId === usuario?.id &&
     estadoAprobacion.aprobado;
+  const cuentaRestringida = Boolean(
+    usuario &&
+    perfilUsuario.usuarioId === usuarioId &&
+    (perfilUsuario.estadoCuenta !== 'activo' || perfilUsuario.errorEstadoCuenta) &&
+    !esAdminActivo
+  );
+  const configurarPublicacion = (configuracion) => {
+    setConfiguracionSitio(normalizeSiteConfig(configuracion));
+    setErrorConfiguracion('');
+  };
 
   const navegarA = (id) => (evento) => {
     evento.preventDefault();
@@ -407,6 +493,7 @@ export default function App() {
     <div
       className="app-shell"
       style={{
+        '--brand-primary': configuracionSitio.primaryColor,
         minHeight: '100vh',
         background:
           'radial-gradient(circle at 50% -10%, #17284a 0%, #0b1120 48%, #060911 100%)',
@@ -423,23 +510,23 @@ export default function App() {
           className="brand-lockup"
           type="button"
           onClick={navegarA('inicio')}
-          aria-label="FixNow, volver al inicio"
+          aria-label={`${configuracionSitio.brandName}, volver al inicio`}
         >
           <span className="brand-mark">
             <Wrench size={20} color="#60a5fa" />
           </span>
           <span>
-            <span className="brand-name">Fix<span>Now</span></span>
-            <span className="brand-subtitle">Asistencia y reparaciones al instante</span>
+            <span className="brand-name">{configuracionSitio.brandName}</span>
+            <span className="brand-subtitle">{configuracionSitio.tagline}</span>
           </span>
         </button>
 
         <nav className="nav-links" aria-label="Navegación principal">
           <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
           <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
-          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
-          <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos</a>
-          <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
+          {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
+          {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos</a>}
+          {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
         </nav>
 
         <div className="nav-actions">
@@ -451,6 +538,8 @@ export default function App() {
                 {nombreUsuario}
                 {esAdminActivo
                   ? ' · Administrador'
+                  : cuentaRestringida
+                    ? ` · Cuenta ${perfilUsuario.estadoCuenta}`
                   : tecnicoAprobado
                   ? ' · Técnico aprobado'
                   : rolUsuario === 'tecnico'
@@ -465,7 +554,7 @@ export default function App() {
                 <button
                   type="button"
                   className="panel-nav-button"
-                  onClick={() => setVista(esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
+                  onClick={() => setVista(cuentaRestringida ? 'cuenta-bloqueada' : esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
                 >
                   <LayoutDashboard size={15} />
                   Mi Panel
@@ -521,6 +610,11 @@ export default function App() {
       </header>
 
       <main className="app-main">
+        {errorConfiguracion && vista === 'inicio' && (
+          <p role="status" className="site-config-fallback">
+            No se pudo cargar la presentación guardada; mostramos el contenido predeterminado.
+          </p>
+        )}
         {avisoSesion && (
           <p
             role="alert"
@@ -546,6 +640,27 @@ export default function App() {
             No se pudo cargar el perfil de la cuenta: {perfilUsuario.error}
           </p>
         )}
+        {perfilUsuario.usuarioId === usuarioId && perfilUsuario.errorEstadoCuenta && (
+          <p role="status" className="panel-message">
+            No se pudo comprobar si la cuenta tiene restricciones. La consulta de estado requiere la migración del centro de control.
+          </p>
+        )}
+        {cuentaRestringida && (
+          <section className="account-restriction-panel" role="alert">
+            <span className="account-restriction-icon"><ShieldCheck size={24} /></span>
+            <span className="section-eyebrow">Acceso limitado</span>
+            <h2>{perfilUsuario.errorEstadoCuenta
+              ? 'No se pudo verificar el estado de la cuenta'
+              : perfilUsuario.estadoCuenta === 'baneado'
+                ? 'Cuenta baneada'
+                : 'Cuenta suspendida temporalmente'}</h2>
+            {perfilUsuario.errorEstadoCuenta && <p>Por seguridad, las acciones de cuenta están pausadas. Vuelve a intentarlo en unos segundos.</p>}
+            {perfilUsuario.motivoSancion && <p><strong>Motivo:</strong> {perfilUsuario.motivoSancion}</p>}
+            {perfilUsuario.suspensionHasta && <p>La suspensión termina: <strong>{new Date(perfilUsuario.suspensionHasta).toLocaleString('es-MX')}</strong></p>}
+            {!perfilUsuario.errorEstadoCuenta && <p>No puedes enviar solicitudes ni aceptar trabajos mientras esta medida esté activa.</p>}
+            <p>Puedes usar el chat de soporte para solicitar ayuda.</p>
+          </section>
+        )}
         {tecnicoSolicitante &&
           estadoAprobacion.usuarioId === usuario?.id &&
           estadoAprobacion.error && (
@@ -566,6 +681,9 @@ export default function App() {
 
         {vista === 'inicio' && (
           <section className="home-content" id="inicio">
+            {configuracionSitio.bannerEnabled && configuracionSitio.bannerText && (
+              <div className="site-promo-banner"><Sparkles size={16} />{configuracionSitio.bannerText}</div>
+            )}
             <div
               className="hero-panel"
             >
@@ -591,11 +709,10 @@ export default function App() {
 
               <div className="hero-copy">
                 <h1>
-                  Tu hogar en buenas manos, <span style={{ color: '#81b3ff' }}>sin complicaciones.</span>
+                  {configuracionSitio.heroTitle}
                 </h1>
                 <p style={{ margin: 0, color: '#cbd5e1', fontSize: 'clamp(0.95rem, 2.5vw, 1.04rem)', lineHeight: 1.55 }}>
-                  Encuentra ayuda confiable para reparar, instalar y mantener tu hogar. Describe lo
-                  que necesitas y recibe atención de profesionales de tu zona.
+                  {configuracionSitio.heroSubtitle}
                 </p>
               </div>
 
@@ -613,7 +730,7 @@ export default function App() {
                     padding: '15px 20px',
                     borderRadius: '15px',
                     border: 'none',
-                    background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    background: `linear-gradient(135deg, ${configuracionSitio.primaryColor} 0%, ${configuracionSitio.primaryColor} 100%)`,
                     color: '#fff',
                     fontWeight: 700,
                     fontSize: '1.05rem',
@@ -621,7 +738,7 @@ export default function App() {
                     boxShadow: '0 10px 24px rgba(37, 99, 235, 0.4)'
                   }}
                 >
-                  <span>Solicitar reparación o instalación</span>
+                  <span>{configuracionSitio.primaryAction}</span>
                   <ChevronRight size={21} />
                 </button>
 
@@ -645,7 +762,7 @@ export default function App() {
                     cursor: 'pointer'
                   }}
                 >
-                  <span>Acceso y registro de cuenta</span>
+                  <span>{configuracionSitio.secondaryAction}</span>
                   <ChevronRight size={19} color="#94a3b8" />
                 </button>
               </div>
@@ -665,7 +782,11 @@ export default function App() {
               <div
                 className="service-grid"
               >
-                {SERVICIOS_DESTACADOS.map((item) => {
+                {SERVICIOS_DESTACADOS.filter((item) =>
+                  configuracionSitio.featuredCategories.includes(
+                    item.subtipo === 'instalacion_sin_toma' ? 'instalacion' : item.categoria
+                  )
+                ).map((item) => {
                   const Icono = item.icono;
                   return (
                     <button
@@ -710,7 +831,7 @@ export default function App() {
               </div>
             </div>
 
-            <section className="how-section" id="como-funciona">
+            {configuracionSitio.showHowItWorks && <section className="how-section" id="como-funciona">
               <div className="section-heading">
                 <span className="section-eyebrow">Simple y transparente</span>
                 <h2>Cómo funciona FixNow</h2>
@@ -733,9 +854,9 @@ export default function App() {
                   <p>Te contacta para coordinar la visita y resolver tu necesidad con claridad.</p>
                 </article>
               </div>
-            </section>
+            </section>}
 
-            <Suspense fallback={<p className="panel-message">Cargando directorio de técnicos...</p>}>
+            {configuracionSitio.showTechnicians && <Suspense fallback={<p className="panel-message">Cargando directorio de técnicos...</p>}>
               <DirectorioTecnicos
                 excluirUsuarioId={usuarioId}
                 onVerPerfil={(id) => {
@@ -743,9 +864,9 @@ export default function App() {
                   setVista('perfil-tecnico');
                 }}
               />
-            </Suspense>
+            </Suspense>}
 
-            <section className="faq-section" id="preguntas">
+            {configuracionSitio.showFaq && <section className="faq-section" id="preguntas">
               <div className="section-heading">
                 <span className="section-eyebrow">Resolvemos tus dudas</span>
                 <h2>Preguntas frecuentes</h2>
@@ -764,7 +885,7 @@ export default function App() {
                   <p>Enviar tu solicitud no implica contratar un servicio; coordina directamente los detalles y el presupuesto con el profesional.</p>
                 </details>
               </div>
-            </section>
+            </section>}
 
             <div
               className="ad-slot"
@@ -794,7 +915,7 @@ export default function App() {
           </section>
         )}
 
-        {vista === 'solicitar' && (
+        {!cuentaRestringida && vista === 'solicitar' && (
           <Suspense fallback={<p className="panel-message">Preparando solicitud...</p>}>
             <SolicitarReparacion
               key={`${seleccionServicio?.categoria || 'inicio'}:${seleccionServicio?.subtipo || 'default'}`}
@@ -840,13 +961,13 @@ export default function App() {
           </Suspense>
         )}
 
-        {vista === 'tecnico' && tecnicoAprobado && (
+        {!cuentaRestringida && vista === 'tecnico' && tecnicoAprobado && (
           <Suspense fallback={<p className="panel-message">Cargando panel técnico...</p>}>
             <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
           </Suspense>
         )}
 
-        {vista === 'cliente' && usuario && rolUsuario === 'cliente' && (
+        {!cuentaRestringida && vista === 'cliente' && usuario && rolUsuario === 'cliente' && (
           <Suspense fallback={<p className="panel-message">Cargando tus solicitudes...</p>}>
             <MisSolicitudes
               usuario={usuario}
@@ -860,12 +981,14 @@ export default function App() {
           </Suspense>
         )}
 
-        {vista === 'admin' && esAdminActivo && (
+        {!cuentaRestringida && vista === 'admin' && esAdminActivo && (
           <Suspense fallback={<p className="panel-message">Cargando panel de administración...</p>}>
             <PanelAdministrador
               usuario={usuario}
               sessionToken={adminAccess.token}
               onVolver={() => setVista('inicio')}
+              configuracionSitio={configuracionSitio}
+              onConfiguracionPublicada={configurarPublicacion}
               onRecargar={() => {
                 supabase.rpc('es_tecnico_aprobado').then(({ data, error }) => {
                   if (usuario?.id && rolUsuario === 'tecnico') {
@@ -881,13 +1004,13 @@ export default function App() {
           </Suspense>
         )}
 
-        {vista === 'admin' && usuario && !esAdminActivo && !adminAccess.checking && (
+        {!cuentaRestringida && vista === 'admin' && usuario && !esAdminActivo && !adminAccess.checking && (
           <section className="panel-message panel-error" role="alert">
             Esta cuenta no tiene acceso administrativo.
           </section>
         )}
 
-        {vista === 'tecnico' && rolUsuario === 'tecnico' && !tecnicoAprobado && (
+        {!cuentaRestringida && vista === 'tecnico' && rolUsuario === 'tecnico' && !tecnicoAprobado && (
           <section
             role="status"
             className="pending-technician"
@@ -903,20 +1026,26 @@ export default function App() {
         )}
       </main>
 
+      {usuario && ['cliente', 'tecnico'].includes(rolUsuario) && (
+        <Suspense fallback={null}>
+          <SupportChat usuario={usuario} nombre={nombreUsuario} rol={rolUsuario === 'tecnico' ? 'Técnico' : 'Cliente'} />
+        </Suspense>
+      )}
+
       <footer className="app-footer">
         <div className="footer-brand">
           <span className="brand-mark"><Wrench size={18} /></span>
           <div>
-            <strong>FixNow</strong>
-            <span>Asistencia y reparaciones al instante</span>
+            <strong>{configuracionSitio.brandName}</strong>
+            <span>{configuracionSitio.tagline}</span>
           </div>
         </div>
         <nav className="footer-links" aria-label="Navegación del pie de página">
           <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
           <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
-          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
-          <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>
-          <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
+          {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
+          {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>}
+          {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
           <button
             type="button"
             className="footer-admin-link"
@@ -925,7 +1054,8 @@ export default function App() {
             Portal administrativo
           </button>
         </nav>
-        <span className="footer-copyright">© {new Date().getFullYear()} FixNow. Servicios para tu hogar.</span>
+        {configuracionSitio.supportPhone && <a className="footer-support-link" href={`https://wa.me/${configuracionSitio.supportPhone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">WhatsApp: {configuracionSitio.supportPhone}</a>}
+        <span className="footer-copyright">© {new Date().getFullYear()} {configuracionSitio.brandName}. {configuracionSitio.footerText}</span>
       </footer>
     </div>
   );

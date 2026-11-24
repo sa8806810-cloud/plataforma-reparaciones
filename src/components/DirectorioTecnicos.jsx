@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BadgeCheck, BriefcaseBusiness, MapPin, UserRound, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { formatSupabaseError } from '../lib/formatSupabaseError';
 
 function iniciales(nombre = '') {
   return nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || '').join('').toUpperCase() || 'FN';
@@ -27,7 +28,7 @@ export default function DirectorioTecnicos({ onVerPerfil, excluirUsuarioId }) {
         setTecnicos(data || []);
       })
       .catch((loadError) => {
-        if (montado) setError(`No se pudo cargar el directorio: ${loadError.message}`);
+        if (montado) setError(`No se pudo cargar el directorio: ${formatSupabaseError(loadError)}`);
       })
       .finally(() => {
         if (montado) setCargando(false);
