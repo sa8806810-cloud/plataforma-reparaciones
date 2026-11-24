@@ -27,45 +27,57 @@ export default function AuthPortal({ onVolver, onAuthSuccess }) {
     setCargando(true);
     setAviso('');
 
-    if (modo === 'registro') {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            nombre,
-            telefono,
-            rol,
-            localidad,
-            oficio: rol === 'tecnico' ? oficio : null
+    try {
+      if (modo === 'registro') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              nombre,
+              telefono,
+              rol,
+              localidad,
+              oficio: rol === 'tecnico' ? oficio : null
+            }
           }
-        }
-      });
+        });
 
-      setCargando(false);
-      if (error) {
-        setAviso(`No se pudo registrar: ${error.message}`);
+        if (error) {
+          setAviso(`No se pudo registrar: ${error.message}`);
+          return;
+        }
+
+        if (data?.session) {
+          setAviso(
+            rol === 'tecnico'
+              ? 'Cuenta creada. Tu perfil de técnico requiere aprobación del administrador.'
+              : '¡Cuenta creada correctamente!'
+          );
+          onAuthSuccess?.(data.user);
+        } else {
+          setAviso(
+            'Cuenta creada. Revisa tu correo para confirmar la dirección; después podrás iniciar sesión.'
+          );
+        }
         return;
       }
-      setAviso('¡Cuenta creada! Revisa tu correo para confirmar o inicia sesión.');
-      if (data?.user && onAuthSuccess) {
-        onAuthSuccess(data.user);
-      }
-    } else {
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      setCargando(false);
       if (error) {
         setAviso(`Error al entrar: ${error.message}`);
         return;
       }
       setAviso('¡Sesión iniciada correctamente!');
-      if (data?.user && onAuthSuccess) {
-        onAuthSuccess(data.user);
-      }
+      onAuthSuccess?.(data.user);
+    } catch (error) {
+      setAviso(`No se pudo completar la operación: ${error.message}`);
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -215,8 +227,11 @@ export default function AuthPortal({ onVolver, onAuthSuccess }) {
               <input
                 type="tel"
                 value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
+                onChange={(e) => setTelefono(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 placeholder="Ej. 3541234567"
+                inputMode="numeric"
+                pattern="[0-9]{10}"
+                title="Ingresa un teléfono de 10 dígitos."
                 required
                 style={estiloInput}
               />
@@ -304,7 +319,7 @@ export default function AuthPortal({ onVolver, onAuthSuccess }) {
         </button>
 
         {aviso && (
-          <p style={{ margin: 0, padding: '10px', borderRadius: '8px', background: '#1e293b' }}>
+        <p role="status" style={{ margin: 0, padding: '10px', borderRadius: '8px', background: '#1e293b' }}>
             {aviso}
           </p>
         )}

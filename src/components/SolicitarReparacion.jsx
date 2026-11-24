@@ -89,7 +89,8 @@ function formatearFechaLarga(isoStr) {
   });
 }
 
-export default function SolicitarReparacion({ usuarioId, onVolver }) {
+export default function SolicitarReparacion({ usuario, onVolver }) {
+  const usuarioId = usuario?.id || null;
   const categoriasKeys = Object.keys(CATEGORIAS_REPARACION);
   const fechaHoyISO = useMemo(() => obtenerHoyISO(), []);
   const fechaInicialObj = useMemo(() => new Date(), []);
@@ -105,6 +106,8 @@ export default function SolicitarReparacion({ usuarioId, onVolver }) {
   });
 
   const [localidad, setLocalidad] = useState(LOCALIDADES_REGION[0]);
+  const [nombreContacto, setNombreContacto] = useState(usuario?.user_metadata?.nombre || '');
+  const [telefonoContacto, setTelefonoContacto] = useState(usuario?.user_metadata?.telefono || '');
   const [direccion, setDireccion] = useState('');
   const [referencias, setReferencias] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -273,11 +276,12 @@ export default function SolicitarReparacion({ usuarioId, onVolver }) {
     setMensaje('');
 
     const payload = {
-      cliente_id: usuarioId || null,
       categoria,
       subtipo,
       titulo: CATEGORIAS_REPARACION[categoria].subtipos[subtipo].label,
       descripcion,
+      nombre_contacto: nombreContacto.trim(),
+      telefono_contacto: telefonoContacto.trim(),
       detalles_tecnicos: {
         ...respuestasTecnicas,
         urgencia,
@@ -286,21 +290,28 @@ export default function SolicitarReparacion({ usuarioId, onVolver }) {
       },
       localidad,
       direccion,
-      referencias_domicilio: referencias,
-      estado: 'solicitado'
+      referencias_domicilio: referencias
     };
 
-    const { error } = await supabase.from('trabajos').insert([payload]);
-    setEnviando(false);
+    if (usuarioId) {
+      payload.cliente_id = usuarioId;
+    }
 
-    if (error) {
-      setMensaje(`Aviso: ${error.message}`);
-    } else {
+    try {
+      const { error } = await supabase.from('trabajos').insert([payload]);
+      if (error) {
+        setMensaje(`No se pudo enviar la solicitud: ${error.message}`);
+        return;
+      }
       setMensaje('¡Solicitud guardada correctamente!');
       setDescripcion('');
       setDireccion('');
       setReferencias('');
       setRespuestasTecnicas({});
+    } catch (error) {
+      setMensaje(`No se pudo enviar la solicitud: ${error.message}`);
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -725,6 +736,36 @@ export default function SolicitarReparacion({ usuarioId, onVolver }) {
               />
             </div>
           </div>
+
+          <label style={{ display: 'grid', gap: '6px' }}>
+            <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>Nombre de contacto</span>
+            <input
+              type="text"
+              value={nombreContacto}
+              onChange={(e) => setNombreContacto(e.target.value)}
+              placeholder="Nombre de quien recibirá al técnico"
+              autoComplete="name"
+              maxLength={120}
+              required
+              style={campoEstilo}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: '6px' }}>
+            <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>Teléfono de contacto (10 dígitos)</span>
+            <input
+              type="tel"
+              value={telefonoContacto}
+              onChange={(e) => setTelefonoContacto(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="Ej. 3541234567"
+              autoComplete="tel"
+              inputMode="numeric"
+              pattern="[0-9]{10}"
+              title="Ingresa un teléfono de 10 dígitos."
+              required
+              style={campoEstilo}
+            />
+          </label>
 
           <label style={{ display: 'grid', gap: '6px' }}>
             <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>Dirección (calle y número)</span>

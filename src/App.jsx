@@ -13,6 +13,7 @@ import {
 import { supabase } from './lib/supabaseClient';
 import SolicitarReparacion from './components/SolicitarReparacion';
 import AuthPortal from './components/AuthPortal';
+import TrabajosTecnico from './components/TrabajosTecnico';
 
 const SERVICIOS_DESTACADOS = [
   {
@@ -52,19 +53,22 @@ const SERVICIOS_DESTACADOS = [
 export default function App() {
   const [vista, setVista] = useState('inicio');
   const [sesion, setSesion] = useState(null);
+  const [avisoSesion, setAvisoSesion] = useState('');
+  const [estadoAprobacion, setEstadoAprobacion] = useState({
+    usuarioId: null,
+    aprobado: false,
+    error: ''
+  });
 
   useEffect(() => {
     const cargarSesion = async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        setSesion(data?.session || null);
-      } catch {
-        setSesion(null);
-      }
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      setSesion(data?.session || null);
     };
 
-    cargarSesion().catch(() => {
-      setSesion(null);
+    cargarSesion().catch((error) => {
+      setAvisoSesion(`No se pudo recuperar la sesión: ${error.message}`);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nuevaSesion) => {
@@ -76,15 +80,55 @@ export default function App() {
     };
   }, []);
 
+  const usuario = sesion?.user || null;
+  const tecnicoSolicitante = usuario?.user_metadata?.rol === 'tecnico';
+
+  useEffect(() => {
+    if (!usuario || !tecnicoSolicitante) return undefined;
+
+    let montado = true;
+    supabase
+      .rpc('es_tecnico_aprobado')
+      .then(({ data, error }) => {
+        if (!montado) return;
+        setEstadoAprobacion({
+          usuarioId: usuario.id,
+          aprobado: !error && data === true,
+          error: error?.message || ''
+        });
+      })
+      .catch((error) => {
+        if (!montado) return;
+        setEstadoAprobacion({
+          usuarioId: usuario.id,
+          aprobado: false,
+          error: error.message
+        });
+      });
+
+    return () => {
+      montado = false;
+    };
+  }, [usuario, tecnicoSolicitante]);
+
   const handleCerrarSesion = async () => {
-    await supabase.auth.signOut();
-    setSesion(null);
-    setVista('inicio');
+    setAvisoSesion('');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setSesion(null);
+      setVista('inicio');
+    } catch (error) {
+      setAvisoSesion(`No se pudo cerrar la sesión: ${error.message}`);
+    }
   };
 
-  const usuario = sesion?.user || null;
   const nombreUsuario = usuario?.user_metadata?.nombre || usuario?.email || '';
   const rolUsuario = usuario?.user_metadata?.rol || '';
+  const tecnicoAprobado =
+    tecnicoSolicitante &&
+    estadoAprobacion.usuarioId === usuario?.id &&
+    estadoAprobacion.aprobado;
 
   return (
     <div
@@ -161,8 +205,33 @@ export default function App() {
                   border: '1px solid #334155'
                 }}
               >
-                {nombreUsuario} {rolUsuario ? `· ${rolUsuario}` : ''}
+                {nombreUsuario}
+                {tecnicoAprobado
+                  ? ' · Técnico aprobado'
+                  : rolUsuario === 'tecnico'
+                    ? ' · Técnico pendiente de aprobación'
+                    : rolUsuario
+                      ? ` · ${rolUsuario}`
+                      : ''}
               </span>
+              {tecnicoAprobado && (
+                <button
+                  type="button"
+                  onClick={() => setVista('tecnico')}
+                  style={{
+                    minHeight: '38px',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid #22c55e',
+                    background: '#052e16',
+                    color: '#bbf7d0',
+                    fontSize: '0.9rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Mis trabajos
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleCerrarSesion}
@@ -212,6 +281,39 @@ export default function App() {
       </header>
 
       <main style={{ maxWidth: '760px', margin: '0 auto' }}>
+        {avisoSesion && (
+          <p
+            role="alert"
+            style={{
+              margin: '0 0 16px',
+              padding: '12px',
+              borderRadius: '10px',
+              border: '1px solid #ef4444',
+              background: '#450a0a',
+              color: '#fecaca'
+            }}
+          >
+            {avisoSesion}
+          </p>
+        )}
+        {tecnicoSolicitante &&
+          estadoAprobacion.usuarioId === usuario?.id &&
+          estadoAprobacion.error && (
+            <p
+              role="alert"
+              style={{
+                margin: '0 0 16px',
+                padding: '12px',
+                borderRadius: '10px',
+                border: '1px solid #ef4444',
+                background: '#450a0a',
+                color: '#fecaca'
+              }}
+            >
+              No se pudo verificar la aprobación de técnico: {estadoAprobacion.error}
+            </p>
+          )}
+
         {vista === 'inicio' && (
           <section style={{ display: 'grid', gap: '18px' }}>
             <div
@@ -390,7 +492,7 @@ export default function App() {
         )}
 
         {vista === 'solicitar' && (
-          <SolicitarReparacion usuarioId={usuario?.id || null} onVolver={() => setVista('inicio')} />
+          <SolicitarReparacion usuario={usuario} onVolver={() => setVista('inicio')} />
         )}
 
         {vista === 'auth' && (
@@ -398,6 +500,29 @@ export default function App() {
             onVolver={() => setVista('inicio')}
             onAuthSuccess={() => setVista('inicio')}
           />
+        )}
+
+        {vista === 'tecnico' && tecnicoAprobado && (
+          <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
+        )}
+
+        {vista === 'tecnico' && !tecnicoAprobado && (
+          <section
+            role="status"
+            style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '20px',
+              borderRadius: '14px',
+              border: '1px solid #334155',
+              background: '#111827',
+              color: '#e2e8f0'
+            }}
+          >
+            {estadoAprobacion.error
+              ? 'No se pudo consultar la aprobación. Intenta actualizar la página o contacta al administrador.'
+              : 'Una cuenta de administrador debe aprobar tu perfil de técnico antes de que puedas ver trabajos.'}
+          </section>
         )}
       </main>
     </div>
