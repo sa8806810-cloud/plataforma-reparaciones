@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Wrench,
   UserCheck,
@@ -13,7 +13,8 @@ import {
   Refrigerator,
   ShieldCheck,
   Clock3,
-  CircleCheck
+  CircleCheck,
+  LayoutDashboard
 } from 'lucide-react';
 import './App.css';
 import { supabase } from './lib/supabaseClient';
@@ -22,6 +23,7 @@ const SolicitarReparacion = lazy(() => import('./components/SolicitarReparacion'
 const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const TrabajosTecnico = lazy(() => import('./components/TrabajosTecnico'));
 const MisSolicitudes = lazy(() => import('./components/MisSolicitudes'));
+const PanelAdministrador = lazy(() => import('./components/PanelAdministrador'));
 
 const SERVICIOS_DESTACADOS = [
   {
@@ -91,6 +93,15 @@ export default function App() {
   const [seleccionServicio, setSeleccionServicio] = useState(null);
   const [sesion, setSesion] = useState(null);
   const [avisoSesion, setAvisoSesion] = useState('');
+  const [adminAccess, setAdminAccess] = useState({
+    usuarioId: null,
+    isAdmin: false,
+    checking: false,
+    token: null,
+    error: ''
+  });
+  const cerrandoPorConflicto = useRef(false);
+  const inicioAdminEnCurso = useRef({ usuarioId: null, promesa: null });
   const [estadoAprobacion, setEstadoAprobacion] = useState({
     usuarioId: null,
     aprobado: false,
@@ -118,10 +129,14 @@ export default function App() {
   }, []);
 
   const usuario = sesion?.user || null;
+  const usuarioId = usuario?.id || null;
   const tecnicoSolicitante = usuario?.user_metadata?.rol === 'tecnico';
 
   useEffect(() => {
-    if (!usuario || !tecnicoSolicitante) return undefined;
+    if (!usuarioId || !tecnicoSolicitante) {
+      setEstadoAprobacion({ usuarioId: null, aprobado: false, error: '' });
+      return undefined;
+    }
 
     let montado = true;
     supabase
@@ -129,7 +144,7 @@ export default function App() {
       .then(({ data, error }) => {
         if (!montado) return;
         setEstadoAprobacion({
-          usuarioId: usuario.id,
+        usuarioId,
           aprobado: !error && data === true,
           error: error?.message || ''
         });
@@ -137,7 +152,7 @@ export default function App() {
       .catch((error) => {
         if (!montado) return;
         setEstadoAprobacion({
-          usuarioId: usuario.id,
+          usuarioId,
           aprobado: false,
           error: error.message
         });
@@ -146,15 +161,161 @@ export default function App() {
     return () => {
       montado = false;
     };
-  }, [usuario, tecnicoSolicitante]);
+  }, [usuarioId, tecnicoSolicitante]);
+
+  useEffect(() => {
+    if (!usuarioId) {
+      inicioAdminEnCurso.current = { usuarioId: null, promesa: null };
+      setAdminAccess({
+        usuarioId: null,
+        isAdmin: false,
+        checking: false,
+        token: null,
+        error: ''
+      });
+      return undefined;
+    }
+
+    let montado = true;
+    setAdminAccess({
+      usuarioId,
+      isAdmin: false,
+      checking: true,
+      token: null,
+      error: ''
+    });
+
+    const crearSesionAdmin = async () => {
+      const { data: esAdmin, error: errorAdmin } = await supabase.rpc('es_administrador');
+      if (errorAdmin) throw errorAdmin;
+      if (!esAdmin) return { isAdmin: false, token: null };
+
+      const { data: token, error: errorSesion } = await supabase.rpc('admin_iniciar_sesion');
+      if (errorSesion) throw errorSesion;
+      if (typeof token !== 'string' || !token) {
+        throw new Error('Supabase no devolvió un token válido para la sesión administrativa.');
+      }
+
+      return { isAdmin: true, token };
+    };
+
+    if (inicioAdminEnCurso.current.usuarioId !== usuarioId) {
+      inicioAdminEnCurso.current = {
+        usuarioId,
+        promesa: crearSesionAdmin()
+      };
+    }
+
+    inicioAdminEnCurso.current.promesa
+      .then(({ isAdmin, token }) => {
+        if (!montado) return;
+        if (isAdmin) {
+          cerrandoPorConflicto.current = false;
+        }
+        setAdminAccess({
+          usuarioId,
+          isAdmin,
+          checking: false,
+          token: token || null,
+          error: ''
+        });
+        if (isAdmin) setVista('admin');
+      })
+      .catch((error) => {
+        if (!montado) return;
+        setAdminAccess({
+          usuarioId,
+          isAdmin: false,
+          checking: false,
+          token: null,
+          error: error.message
+        });
+      });
+
+    return () => {
+      montado = false;
+    };
+  }, [usuarioId]);
+
+  useEffect(() => {
+    if (!adminAccess.isAdmin || !adminAccess.token || !usuarioId) return undefined;
+    let validando = false;
+    let montado = true;
+
+    const cerrarSesionDesplazada = async (mensaje) => {
+      if (cerrandoPorConflicto.current) return;
+      cerrandoPorConflicto.current = true;
+      setAdminAccess({
+        usuarioId,
+        isAdmin: false,
+        checking: false,
+        token: null,
+        error: ''
+      });
+      setAvisoSesion(mensaje);
+      setVista('auth-admin');
+      await supabase.auth.signOut();
+    };
+
+    const validarSesion = async () => {
+      if (validando || !montado) return;
+      validando = true;
+      try {
+        const { data: vigente, error } = await supabase.rpc('admin_validar_sesion', {
+          p_session_token: adminAccess.token
+        });
+        if (error) throw error;
+        if (vigente !== true) {
+          const { data: sigueSiendoAdmin, error: errorAdmin } = await supabase.rpc('es_administrador');
+          if (errorAdmin) throw errorAdmin;
+          await cerrarSesionDesplazada(
+            sigueSiendoAdmin
+              ? 'Sesión iniciada en otro dispositivo. Por seguridad, esta sesión administrativa se cerró.'
+              : 'El acceso administrativo fue revocado. Esta sesión se cerró.'
+          );
+        }
+      } catch (error) {
+        if (montado) {
+          setAdminAccess((actual) => ({
+            ...actual,
+            error: `No se pudo validar la sesión administrativa: ${error.message}`
+          }));
+        }
+      } finally {
+        validando = false;
+      }
+    };
+
+    const intervalo = window.setInterval(validarSesion, 5000);
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') validarSesion();
+    };
+    document.addEventListener('visibilitychange', alVolver);
+
+    return () => {
+      montado = false;
+      window.clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [adminAccess.isAdmin, adminAccess.token, usuarioId]);
 
   const handleCerrarSesion = async () => {
     setAvisoSesion('');
     try {
+      let errorCierreAdmin = null;
+      if (adminAccess.token) {
+        const { error } = await supabase.rpc('admin_cerrar_sesion', {
+          p_session_token: adminAccess.token
+        });
+        errorCierreAdmin = error;
+      }
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setSesion(null);
       setVista('inicio');
+      if (errorCierreAdmin) {
+        setAvisoSesion(`Se cerró la sesión, pero no se pudo liberar el token administrativo: ${errorCierreAdmin.message}`);
+      }
     } catch (error) {
       setAvisoSesion(`No se pudo cerrar la sesión: ${error.message}`);
     }
@@ -162,6 +323,7 @@ export default function App() {
 
   const nombreUsuario = usuario?.user_metadata?.nombre || usuario?.email || '';
   const rolUsuario = usuario?.user_metadata?.rol || '';
+  const esAdminActivo = adminAccess.usuarioId === usuarioId && adminAccess.isAdmin;
   const tecnicoAprobado =
     tecnicoSolicitante &&
     estadoAprobacion.usuarioId === usuario?.id &&
@@ -201,7 +363,7 @@ export default function App() {
         <button
           className="brand-lockup"
           type="button"
-          onClick={() => setVista('inicio')}
+          onClick={navegarA('inicio')}
           aria-label="FixNow, volver al inicio"
         >
           <span className="brand-mark">
@@ -214,8 +376,9 @@ export default function App() {
         </button>
 
         <nav className="nav-links" aria-label="Navegación principal">
-          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
+          <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
           <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
+          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
           <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
         </nav>
 
@@ -226,7 +389,9 @@ export default function App() {
                 className="nav-user-label"
               >
                 {nombreUsuario}
-                {tecnicoAprobado
+                {esAdminActivo
+                  ? ' · Administrador'
+                  : tecnicoAprobado
                   ? ' · Técnico aprobado'
                   : rolUsuario === 'tecnico'
                     ? ' · Técnico pendiente de aprobación'
@@ -234,31 +399,16 @@ export default function App() {
                       ? ` · ${rolUsuario}`
                       : ''}
               </span>
-              {tecnicoAprobado && (
-                <button
-                  type="button"
-                  onClick={() => setVista('tecnico')}
-                  style={{
-                    minHeight: '38px',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid #22c55e',
-                    background: '#052e16',
-                    color: '#bbf7d0',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Mis trabajos
-                </button>
-              )}
-              {rolUsuario === 'cliente' && (
+              {adminAccess.checking ? (
+                <span className="nav-user-label">Verificando acceso…</span>
+              ) : (
                 <button
                   type="button"
                   className="panel-nav-button"
-                  onClick={() => setVista('cliente')}
+                  onClick={() => setVista(esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
                 >
-                  Mis solicitudes
+                  <LayoutDashboard size={15} />
+                  Mi Panel
                 </button>
               )}
               <button
@@ -324,6 +474,11 @@ export default function App() {
             }}
           >
             {avisoSesion}
+          </p>
+        )}
+        {adminAccess.error && usuario && (
+          <p role="alert" className="panel-message panel-error">
+            No se pudo validar el acceso administrativo: {adminAccess.error}
           </p>
         )}
         {tecnicoSolicitante &&
@@ -433,7 +588,7 @@ export default function App() {
               <div className="trust-row" aria-label="Beneficios">
                 <span className="trust-item"><ShieldCheck size={16} /> Técnicos verificados</span>
                 <span className="trust-item"><Clock3 size={16} /> Respuesta rápida</span>
-                <span className="trust-item"><CircleCheck size={16} /> Sin compromiso</span>
+                <span className="trust-item"><CircleCheck size={16} /> Atención garantizada</span>
               </div>
 
               <div className="section-heading" id="servicios">
@@ -585,6 +740,17 @@ export default function App() {
           </Suspense>
         )}
 
+        {vista === 'auth-admin' && (
+          <Suspense fallback={<p className="panel-message">Preparando acceso administrativo...</p>}>
+            <AuthPortal
+              className="auth-panel"
+              adminOnly
+              onVolver={() => setVista('inicio')}
+              onAuthSuccess={() => setVista('inicio')}
+            />
+          </Suspense>
+        )}
+
         {vista === 'tecnico' && tecnicoAprobado && (
           <Suspense fallback={<p className="panel-message">Cargando panel técnico...</p>}>
             <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
@@ -593,29 +759,80 @@ export default function App() {
 
         {vista === 'cliente' && usuario && (
           <Suspense fallback={<p className="panel-message">Cargando tus solicitudes...</p>}>
-            <MisSolicitudes usuario={usuario} onVolver={() => setVista('inicio')} />
+            <MisSolicitudes
+              usuario={usuario}
+              onVolver={() => setVista('inicio')}
+              onNuevaSolicitud={() => solicitarServicio()}
+            />
           </Suspense>
         )}
 
-        {vista === 'tecnico' && !tecnicoAprobado && (
+        {vista === 'admin' && esAdminActivo && (
+          <Suspense fallback={<p className="panel-message">Cargando panel de administración...</p>}>
+            <PanelAdministrador
+              usuario={usuario}
+              sessionToken={adminAccess.token}
+              onVolver={() => setVista('inicio')}
+              onRecargar={() => {
+                supabase.rpc('es_tecnico_aprobado').then(({ data, error }) => {
+                  if (usuario?.id && rolUsuario === 'tecnico') {
+                    setEstadoAprobacion({
+                      usuarioId: usuario.id,
+                      aprobado: !error && data === true,
+                      error: error?.message || ''
+                    });
+                  }
+                });
+              }}
+            />
+          </Suspense>
+        )}
+
+        {vista === 'admin' && usuario && !esAdminActivo && !adminAccess.checking && (
+          <section className="panel-message panel-error" role="alert">
+            Esta cuenta no tiene acceso administrativo.
+          </section>
+        )}
+
+        {vista === 'tecnico' && rolUsuario === 'tecnico' && !tecnicoAprobado && (
           <section
             role="status"
-            style={{
-              maxWidth: '600px',
-              margin: '0 auto',
-              padding: '20px',
-              borderRadius: '14px',
-              border: '1px solid #334155',
-              background: '#111827',
-              color: '#e2e8f0'
-            }}
+            className="pending-technician"
           >
             {estadoAprobacion.error
               ? 'No se pudo consultar la aprobación. Intenta actualizar la página o contacta al administrador.'
-              : 'Una cuenta de administrador debe aprobar tu perfil de técnico antes de que puedas ver trabajos.'}
+              : <>
+                  <ShieldCheck size={28} />
+                  <h2>Cuenta en revisión</h2>
+                  <p>El administrador revisará tu perfil. Te avisaremos cuando puedas recibir trabajos.</p>
+                </>}
           </section>
         )}
       </main>
+
+      <footer className="app-footer">
+        <div className="footer-brand">
+          <span className="brand-mark"><Wrench size={18} /></span>
+          <div>
+            <strong>FixNow</strong>
+            <span>Asistencia y reparaciones al instante</span>
+          </div>
+        </div>
+        <nav className="footer-links" aria-label="Navegación del pie de página">
+          <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
+          <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
+          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
+          <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
+          <button
+            type="button"
+            className="footer-admin-link"
+            onClick={() => setVista(esAdminActivo ? 'admin' : 'auth-admin')}
+          >
+            Portal administrativo
+          </button>
+        </nav>
+        <span className="footer-copyright">© {new Date().getFullYear()} FixNow. Servicios para tu hogar.</span>
+      </footer>
     </div>
   );
 }

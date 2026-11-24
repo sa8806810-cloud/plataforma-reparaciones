@@ -3,7 +3,12 @@ import { ArrowLeft, User, Wrench, Mail, Lock, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { LOCALIDADES_REGION } from '../lib/formulariosConfig';
 
-export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-panel' }) {
+export default function AuthPortal({
+  onVolver,
+  onAuthSuccess,
+  className = 'auth-panel',
+  adminOnly = false
+}) {
   const [modo, setModo] = useState('login');
   const [rol, setRol] = useState('cliente');
   const [nombre, setNombre] = useState('');
@@ -28,7 +33,7 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
     setAviso('');
 
     try {
-      if (modo === 'registro') {
+      if (modo === 'registro' && !adminOnly) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -72,6 +77,20 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
         setAviso(`Error al entrar: ${error.message}`);
         return;
       }
+
+      if (adminOnly) {
+        const { data: esAdmin, error: errorAdmin } = await supabase.rpc('es_administrador');
+        if (errorAdmin || esAdmin !== true) {
+          await supabase.auth.signOut();
+          setAviso(
+            errorAdmin
+              ? `No se pudo validar el acceso administrativo: ${errorAdmin.message}`
+              : 'Esta cuenta no tiene acceso al portal administrativo.'
+          );
+          return;
+        }
+      }
+
       setAviso('¡Sesión iniciada correctamente!');
       onAuthSuccess?.(data.user);
     } catch (error) {
@@ -115,11 +134,11 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
           <span>Regresar</span>
         </button>
         <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
-          {modo === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+          {adminOnly ? 'Portal administrativo' : modo === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
         </h2>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+      {!adminOnly && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         <button
           type="button"
           onClick={() => setModo('login')}
@@ -150,9 +169,9 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
         >
           Registrarme
         </button>
-      </div>
+      </div>}
 
-      {modo === 'registro' && (
+      {!adminOnly && modo === 'registro' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <button
             type="button"
@@ -208,7 +227,13 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
           border: '1px solid #1f2937'
         }}
       >
-        {modo === 'registro' && (
+        {adminOnly && (
+          <p className="panel-message">
+            Acceso reservado a la cuenta designada como administradora en Supabase.
+          </p>
+        )}
+
+        {!adminOnly && modo === 'registro' && (
           <>
             <label style={{ display: 'grid', gap: '6px' }}>
               <span>Nombre completo</span>
@@ -308,14 +333,14 @@ export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-
             padding: '14px',
             borderRadius: '10px',
             border: 'none',
-            background: modo === 'login' ? '#2563eb' : '#16a34a',
+            background: adminOnly ? '#2563eb' : modo === 'login' ? '#2563eb' : '#16a34a',
             color: '#fff',
             fontWeight: 'bold',
             fontSize: '1rem',
             cursor: 'pointer'
           }}
         >
-          {textoBotonSubmit}
+          {adminOnly ? (cargando ? 'Validando acceso...' : 'Entrar como administrador') : textoBotonSubmit}
         </button>
 
         {aviso && (
