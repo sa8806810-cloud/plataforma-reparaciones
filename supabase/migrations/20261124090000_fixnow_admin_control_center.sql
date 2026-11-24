@@ -491,7 +491,17 @@ begin
     ),
     (
       select coalesce(
-        jsonb_agg(to_jsonb(recentes) order by recientes.creado_en desc),
+        jsonb_agg(
+          jsonb_build_object(
+            'id', recent_job.id,
+            'categoria', recent_job.categoria,
+            'titulo', recent_job.titulo,
+            'estado', recent_job.estado,
+            'localidad', recent_job.localidad,
+            'creado_en', recent_job.creado_en
+          )
+          order by recent_job.creado_en desc
+        ),
         '[]'::jsonb
       )
       from (
@@ -499,7 +509,7 @@ begin
         from public.trabajos
         order by creado_en desc
         limit 10
-      ) as recientes
+      ) as recent_job
     );
 end;
 $$;
