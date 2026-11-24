@@ -1,6 +1,46 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Clock3, MapPin, Phone, RefreshCw, Wrench } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  Droplets,
+  Hammer,
+  KeyRound,
+  MapPin,
+  Phone,
+  Plug,
+  Refrigerator,
+  RefreshCw,
+  Wrench,
+  Zap
+} from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+
+const ICONOS_CATEGORIA = {
+  electricidad: Zap,
+  plomeria: Droplets,
+  reparaciones: Hammer,
+  cerrajeria: KeyRound,
+  electrodomesticos: Refrigerator,
+  instalacion: Plug
+};
+
+const ETIQUETAS_CATEGORIA = {
+  electricidad: 'Electricidad',
+  plomeria: 'Plomería',
+  reparaciones: 'Reparaciones',
+  cerrajeria: 'Cerrajería',
+  electrodomesticos: 'Electrodomésticos'
+};
+
+const ETIQUETAS_URGENCIA = {
+  normal: 'Normal',
+  hoy_mismo: 'Hoy mismo',
+  emergencia_24_7: 'Emergencia 24/7',
+  urgente: 'Urgente',
+  semana: 'Esta semana',
+  cotizar: 'Sin prisa'
+};
 
 function mostrarFecha(fecha) {
   if (!fecha) return 'Sin fecha';
@@ -13,7 +53,7 @@ function mostrarFecha(fecha) {
 
 function mostrarEstado(estado) {
   const etiquetas = {
-    aceptado: 'Aceptado',
+    aceptado: 'En camino',
     en_proceso: 'En proceso',
     completado: 'Completado'
   };
@@ -27,6 +67,8 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
   const [trabajoActivo, setTrabajoActivo] = useState(null);
   const [aviso, setAviso] = useState('');
   const [error, setError] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
+  const [estadoFiltro, setEstadoFiltro] = useState('todos');
 
   const obtenerTrabajos = useCallback(async () => {
     const [disponiblesResult, asignadosResult] = await Promise.all([
@@ -138,6 +180,16 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
     }
   };
 
+  const filtrarCategoria = (trabajo) =>
+    categoriaFiltro === 'todas' || trabajo.categoria === categoriaFiltro;
+  const disponiblesFiltrados = disponibles.filter(
+    (trabajo) => filtrarCategoria(trabajo) && (estadoFiltro === 'todos' || estadoFiltro === 'solicitado')
+  );
+  const asignadosFiltrados = asignados.filter(
+    (trabajo) =>
+      filtrarCategoria(trabajo) && (estadoFiltro === 'todos' || trabajo.estado === estadoFiltro)
+  );
+
   const tarjetaEstilo = {
     display: 'grid',
     gap: '10px',
@@ -159,23 +211,49 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
   };
 
   return (
-    <section style={{ display: 'grid', gap: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <button type="button" onClick={onVolver} style={botonEstilo}>
+    <section className="technician-panel">
+      <div className="technician-toolbar">
+        <button type="button" onClick={onVolver} className="panel-action-button" style={botonEstilo}>
           <ArrowLeft size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
           Inicio
         </button>
-        <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '1.3rem' }}>Trabajos para técnicos</h2>
+        <div className="section-heading">
+          <span className="section-eyebrow">Panel profesional</span>
+          <h2>Trabajos para técnicos</h2>
+        </div>
         <button
           type="button"
           onClick={cargarTrabajos}
           disabled={cargando}
           aria-label="Actualizar trabajos"
+          className="panel-action-button panel-refresh-button"
           style={{ ...botonEstilo, marginLeft: 'auto', background: '#1e293b', borderColor: '#475569' }}
         >
           <RefreshCw size={16} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
           Actualizar
         </button>
+      </div>
+
+      <div className="technician-filters">
+        <label>
+          <span>Categoría</span>
+          <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)}>
+            <option value="todas">Todas las categorías</option>
+            {Object.entries(ETIQUETAS_CATEGORIA).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Estado</span>
+          <select value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)}>
+            <option value="todos">Todos los estados</option>
+            <option value="solicitado">Disponible</option>
+            <option value="aceptado">En camino</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="completado">Completado</option>
+          </select>
+        </label>
       </div>
 
       {aviso && (
@@ -192,30 +270,43 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
 
       {!cargando && (
         <>
-          <section style={{ display: 'grid', gap: '10px' }}>
+          <section className="technician-section">
             <h3 style={{ margin: 0, color: '#e2e8f0' }}>Disponibles</h3>
-            {disponibles.length === 0 && (
+            {disponiblesFiltrados.length === 0 && (
               <p style={{ ...tarjetaEstilo, color: '#94a3b8', margin: 0 }}>
-                No hay trabajos disponibles en este momento.
+                {disponibles.length
+                  ? 'No hay trabajos que coincidan con los filtros.'
+                  : 'No hay trabajos disponibles en este momento.'}
               </p>
             )}
-            {disponibles.map((trabajo) => (
-              <article key={trabajo.id} style={tarjetaEstilo}>
+            <div className="technician-jobs">
+            {disponiblesFiltrados.map((trabajo) => {
+              const CategoriaIcono = ICONOS_CATEGORIA[trabajo.categoria] || Wrench;
+              const urgencia = trabajo.detalles_tecnicos?.urgencia || 'normal';
+              const urgente = urgencia === 'hoy_mismo' || urgencia === 'emergencia_24_7' || urgencia === 'urgente';
+              return (
+              <article key={trabajo.id} className="technician-job-card" style={tarjetaEstilo}>
+                <div className="job-badge-row">
+                  <span className="job-badge">
+                    <CategoriaIcono size={14} />
+                    {ETIQUETAS_CATEGORIA[trabajo.categoria] || trabajo.categoria}
+                  </span>
+                  <span className={`job-badge ${urgente ? 'job-badge-urgent' : 'job-badge-normal'}`}>
+                    {ETIQUETAS_URGENCIA[urgencia] || urgencia}
+                  </span>
+                </div>
                 <strong style={{ color: '#f8fafc' }}>{trabajo.titulo}</strong>
-                <span style={{ color: '#93c5fd' }}>
-                  {trabajo.categoria} · {trabajo.subtipo}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}>
+                <span className="job-meta">
                   <MapPin size={15} /> {trabajo.localidad}
                 </span>
                 {trabajo.detalles_tecnicos?.fecha_solicitada && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}>
+                  <span className="job-meta">
                     <Clock3 size={15} /> {mostrarFecha(trabajo.detalles_tecnicos.fecha_solicitada)}
                   </span>
                 )}
-                {trabajo.detalles_tecnicos?.urgencia && (
-                  <span style={{ color: '#fbbf24' }}>
-                    Prioridad: {trabajo.detalles_tecnicos.urgencia}
+                {trabajo.detalles_tecnicos?.presupuesto_estimado && (
+                  <span className="job-meta">
+                    Presupuesto: {trabajo.detalles_tecnicos.presupuesto_estimado}
                   </span>
                 )}
                 <p style={{ margin: 0, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
@@ -230,26 +321,45 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
                   {trabajoActivo === trabajo.id ? 'Aceptando...' : 'Aceptar trabajo'}
                 </button>
               </article>
-            ))}
+            );})}
+            </div>
           </section>
 
-          <section style={{ display: 'grid', gap: '10px' }}>
+          <section className="technician-section">
             <h3 style={{ margin: 0, color: '#e2e8f0' }}>Mis trabajos</h3>
-            {asignados.length === 0 && (
+            {asignadosFiltrados.length === 0 && (
               <p style={{ ...tarjetaEstilo, color: '#94a3b8', margin: 0 }}>
-                Aún no tienes trabajos asignados.
+                {asignados.length
+                  ? 'No hay trabajos que coincidan con los filtros.'
+                  : 'Aún no tienes trabajos asignados.'}
               </p>
             )}
-            {asignados.map((trabajo) => (
-              <article key={trabajo.id} style={tarjetaEstilo}>
+            <div className="technician-jobs">
+            {asignadosFiltrados.map((trabajo) => (
+              <article key={trabajo.id} className="technician-job-card" style={tarjetaEstilo}>
+                <div className="job-badge-row">
+                  <span className="job-badge">
+                    {ETIQUETAS_CATEGORIA[trabajo.categoria] || trabajo.categoria}
+                  </span>
+                  <span className="job-badge job-status-badge">
+                    {mostrarEstado(trabajo.estado)}
+                  </span>
+                </div>
                 <strong style={{ color: '#f8fafc' }}>{trabajo.titulo}</strong>
-                <span style={{ color: '#93c5fd' }}>
-                  <Wrench size={15} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
-                  {mostrarEstado(trabajo.estado)}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}>
+                <span className="job-meta">
                   <MapPin size={15} /> {trabajo.direccion}, {trabajo.localidad}
                 </span>
+                {Number.isFinite(trabajo.detalles_tecnicos?.ubicacion_gps?.lat) &&
+                  Number.isFinite(trabajo.detalles_tecnicos?.ubicacion_gps?.lng) && (
+                    <a
+                      className="job-meta job-map-link"
+                      href={`https://www.google.com/maps?q=${trabajo.detalles_tecnicos.ubicacion_gps.lat},${trabajo.detalles_tecnicos.ubicacion_gps.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir ubicación GPS en Maps
+                    </a>
+                  )}
                 {trabajo.referencias_domicilio && (
                   <span style={{ color: '#cbd5e1' }}>Referencias: {trabajo.referencias_domicilio}</span>
                 )}
@@ -280,6 +390,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
                 )}
               </article>
             ))}
+            </div>
           </section>
         </>
       )}

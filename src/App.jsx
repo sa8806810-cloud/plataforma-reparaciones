@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Wrench,
   UserCheck,
@@ -8,18 +8,28 @@ import {
   Plug,
   Hammer,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  KeyRound,
+  Refrigerator,
+  ShieldCheck,
+  Clock3,
+  CircleCheck
 } from 'lucide-react';
+import './App.css';
 import { supabase } from './lib/supabaseClient';
-import SolicitarReparacion from './components/SolicitarReparacion';
-import AuthPortal from './components/AuthPortal';
-import TrabajosTecnico from './components/TrabajosTecnico';
+
+const SolicitarReparacion = lazy(() => import('./components/SolicitarReparacion'));
+const AuthPortal = lazy(() => import('./components/AuthPortal'));
+const TrabajosTecnico = lazy(() => import('./components/TrabajosTecnico'));
+const MisSolicitudes = lazy(() => import('./components/MisSolicitudes'));
 
 const SERVICIOS_DESTACADOS = [
   {
     titulo: 'Electricidad',
     detalle: 'Cortos, apagones, pastillas y cableado',
     icono: Zap,
+    categoria: 'electricidad',
+    subtipo: 'falla_general',
     acento: '#60a5fa',
     fondoIcono: 'rgba(59, 130, 246, 0.16)',
     bordeIcono: 'rgba(96, 165, 250, 0.35)'
@@ -28,6 +38,8 @@ const SERVICIOS_DESTACADOS = [
     titulo: 'Instalación nueva',
     detalle: 'Luz o toma desde cero en hogar o terreno',
     icono: Plug,
+    categoria: 'electricidad',
+    subtipo: 'instalacion_sin_toma',
     acento: '#fbbf24',
     fondoIcono: 'rgba(251, 191, 36, 0.15)',
     bordeIcono: 'rgba(251, 191, 36, 0.35)'
@@ -36,6 +48,8 @@ const SERVICIOS_DESTACADOS = [
     titulo: 'Plomería',
     detalle: 'Fugas, tuberías, llaves, tinacos y drenaje',
     icono: Droplets,
+    categoria: 'plomeria',
+    subtipo: 'fuga_tuberia',
     acento: '#38bdf8',
     fondoIcono: 'rgba(56, 189, 248, 0.15)',
     bordeIcono: 'rgba(56, 189, 248, 0.35)'
@@ -44,14 +58,37 @@ const SERVICIOS_DESTACADOS = [
     titulo: 'Reparaciones',
     detalle: 'Ajustes, montajes y mejoras del hogar',
     icono: Hammer,
+    categoria: 'reparaciones',
+    subtipo: 'reparacion_general',
     acento: '#34d399',
     fondoIcono: 'rgba(52, 211, 153, 0.15)',
     bordeIcono: 'rgba(52, 211, 153, 0.35)'
+  },
+  {
+    titulo: 'Cerrajería',
+    detalle: 'Chapas, cerraduras y accesos',
+    icono: KeyRound,
+    categoria: 'cerrajeria',
+    subtipo: 'cerradura',
+    acento: '#c4b5fd',
+    fondoIcono: 'rgba(167, 139, 250, 0.15)',
+    bordeIcono: 'rgba(196, 181, 253, 0.35)'
+  },
+  {
+    titulo: 'Electrodomésticos',
+    detalle: 'Diagnóstico y reparación en casa',
+    icono: Refrigerator,
+    categoria: 'electrodomesticos',
+    subtipo: 'diagnostico',
+    acento: '#fb923c',
+    fondoIcono: 'rgba(251, 146, 60, 0.15)',
+    bordeIcono: 'rgba(251, 146, 60, 0.35)'
   }
 ];
 
 export default function App() {
   const [vista, setVista] = useState('inicio');
+  const [seleccionServicio, setSeleccionServicio] = useState(null);
   const [sesion, setSesion] = useState(null);
   const [avisoSesion, setAvisoSesion] = useState('');
   const [estadoAprobacion, setEstadoAprobacion] = useState({
@@ -130,8 +167,24 @@ export default function App() {
     estadoAprobacion.usuarioId === usuario?.id &&
     estadoAprobacion.aprobado;
 
+  const navegarA = (id) => (evento) => {
+    evento.preventDefault();
+    setVista('inicio');
+    window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
+
+  const solicitarServicio = (servicio = null) => {
+    setSeleccionServicio(
+      servicio ? { categoria: servicio.categoria, subtipo: servicio.subtipo } : null
+    );
+    setVista('solicitar');
+  };
+
   return (
     <div
+      className="app-shell"
       style={{
         minHeight: '100vh',
         background:
@@ -143,67 +196,34 @@ export default function App() {
       }}
     >
       <header
-        style={{
-          maxWidth: '760px',
-          margin: '0 auto 20px auto',
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          padding: '12px 16px',
-          borderRadius: '18px',
-          background: 'rgba(15, 23, 42, 0.88)',
-          border: '1px solid rgba(148, 163, 184, 0.16)',
-          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.4)'
-        }}
+        className="app-navbar"
       >
         <button
+          className="brand-lockup"
           type="button"
           onClick={() => setVista('inicio')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '10px',
-            background: 'transparent',
-            border: 'none',
-            color: '#f8fafc',
-            padding: '4px 6px',
-            borderRadius: '12px',
-            cursor: 'pointer'
-          }}
+          aria-label="FixNow, volver al inicio"
         >
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '38px',
-              height: '38px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(37, 99, 235, 0.14))',
-              border: '1px solid rgba(96, 165, 250, 0.45)'
-            }}
-          >
+          <span className="brand-mark">
             <Wrench size={20} color="#60a5fa" />
           </span>
-          <span style={{ fontWeight: 700, fontSize: '1.08rem', letterSpacing: '-0.015em' }}>
-            Servicios y Reparaciones
+          <span>
+            <span className="brand-name">Fix<span>Now</span></span>
+            <span className="brand-subtitle">Asistencia y reparaciones al instante</span>
           </span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <nav className="nav-links" aria-label="Navegación principal">
+          <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
+          <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
+          <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
+        </nav>
+
+        <div className="nav-actions">
           {usuario ? (
             <>
               <span
-                style={{
-                  fontSize: '0.88rem',
-                  color: '#e2e8f0',
-                  background: '#1e293b',
-                  padding: '7px 11px',
-                  borderRadius: '10px',
-                  border: '1px solid #334155'
-                }}
+                className="nav-user-label"
               >
                 {nombreUsuario}
                 {tecnicoAprobado
@@ -232,6 +252,15 @@ export default function App() {
                   Mis trabajos
                 </button>
               )}
+              {rolUsuario === 'cliente' && (
+                <button
+                  type="button"
+                  className="panel-nav-button"
+                  onClick={() => setVista('cliente')}
+                >
+                  Mis solicitudes
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleCerrarSesion}
@@ -255,6 +284,7 @@ export default function App() {
             </>
           ) : (
             <button
+              className="nav-login-button"
               type="button"
               onClick={() => setVista('auth')}
               style={{
@@ -280,7 +310,7 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth: '760px', margin: '0 auto' }}>
+      <main className="app-main">
         {avisoSesion && (
           <p
             role="alert"
@@ -315,21 +345,13 @@ export default function App() {
           )}
 
         {vista === 'inicio' && (
-          <section style={{ display: 'grid', gap: '18px' }}>
+          <section className="home-content" id="inicio">
             <div
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(17, 26, 46, 0.96) 0%, rgba(13, 20, 36, 0.96) 100%)',
-                border: '1px solid rgba(148, 163, 184, 0.18)',
-                borderRadius: '24px',
-                padding: 'clamp(20px, 5vw, 32px) clamp(16px, 4vw, 28px)',
-                display: 'grid',
-                gap: '20px',
-                boxShadow: '0 20px 45px rgba(0, 0, 0, 0.45)'
-              }}
+              className="hero-panel"
             >
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <span
+                  className="hero-kicker"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -347,27 +369,21 @@ export default function App() {
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gap: '10px', textAlign: 'center', maxWidth: '580px', margin: '0 auto' }}>
-                <h1
-                  style={{
-                    margin: 0,
-                    fontSize: 'clamp(1.55rem, 5vw, 2.2rem)',
-                    lineHeight: 1.18,
-                    letterSpacing: '-0.025em'
-                  }}
-                >
-                  Reparaciones e instalaciones a tu medida
+              <div className="hero-copy">
+                <h1>
+                  Tu hogar en buenas manos, <span style={{ color: '#81b3ff' }}>sin complicaciones.</span>
                 </h1>
                 <p style={{ margin: 0, color: '#cbd5e1', fontSize: 'clamp(0.95rem, 2.5vw, 1.04rem)', lineHeight: 1.55 }}>
-                  Elige el servicio que necesitas, selecciona fecha en el calendario y comparte tu
-                  ubicación en segundos desde tu celular o computadora.
+                  Encuentra ayuda confiable para reparar, instalar y mantener tu hogar. Describe lo
+                  que necesitas y recibe atención de profesionales de tu zona.
                 </p>
               </div>
 
-              <div style={{ display: 'grid', gap: '12px', maxWidth: '540px', width: '100%', margin: '0 auto' }}>
+              <div className="hero-actions" style={{ display: 'grid', gap: '12px', maxWidth: '540px', width: '100%', margin: '0 auto' }}>
                 <button
+                  className="hero-primary-button"
                   type="button"
-                  onClick={() => setVista('solicitar')}
+                  onClick={() => solicitarServicio()}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -390,6 +406,7 @@ export default function App() {
                 </button>
 
                 <button
+                  className="hero-secondary-button"
                   type="button"
                   onClick={() => setVista('auth')}
                   style={{
@@ -413,21 +430,30 @@ export default function App() {
                 </button>
               </div>
 
+              <div className="trust-row" aria-label="Beneficios">
+                <span className="trust-item"><ShieldCheck size={16} /> Técnicos verificados</span>
+                <span className="trust-item"><Clock3 size={16} /> Respuesta rápida</span>
+                <span className="trust-item"><CircleCheck size={16} /> Sin compromiso</span>
+              </div>
+
+              <div className="section-heading" id="servicios">
+                <span className="section-eyebrow">Servicios para tu hogar</span>
+                <h2>¿Qué necesitas resolver?</h2>
+                <p>Elige una categoría para iniciar tu solicitud con el servicio preseleccionado.</p>
+              </div>
+
               <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                  gap: '10px',
-                  marginTop: '4px'
-                }}
+                className="service-grid"
               >
                 {SERVICIOS_DESTACADOS.map((item) => {
                   const Icono = item.icono;
                   return (
                     <button
+                      className="service-card"
                       key={item.titulo}
                       type="button"
-                      onClick={() => setVista('solicitar')}
+                      onClick={() => solicitarServicio(item)}
+                      aria-label={`Solicitar servicio de ${item.titulo}`}
                       style={{
                         display: 'grid',
                         gap: '6px',
@@ -440,7 +466,7 @@ export default function App() {
                         cursor: 'pointer'
                       }}
                     >
-                      <span
+                      <span className="service-icon"
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -464,7 +490,54 @@ export default function App() {
               </div>
             </div>
 
+            <section className="how-section" id="como-funciona">
+              <div className="section-heading">
+                <span className="section-eyebrow">Simple y transparente</span>
+                <h2>Cómo funciona FixNow</h2>
+                <p>Del primer mensaje a la solución, te acompañamos en cada paso.</p>
+              </div>
+              <div className="steps-grid">
+                <article className="step-card">
+                  <span className="step-number">01</span>
+                  <h3>Cuéntanos qué necesitas</h3>
+                  <p>Describe el problema, elige tu zona y dinos cuándo te conviene recibir atención.</p>
+                </article>
+                <article className="step-card">
+                  <span className="step-number">02</span>
+                  <h3>Un profesional acepta</h3>
+                  <p>Un técnico aprobado de tu zona revisa los detalles y acepta el trabajo.</p>
+                </article>
+                <article className="step-card">
+                  <span className="step-number">03</span>
+                  <h3>Recibe atención confiable</h3>
+                  <p>Te contacta para coordinar la visita y resolver tu necesidad con claridad.</p>
+                </article>
+              </div>
+            </section>
+
+            <section className="faq-section" id="preguntas">
+              <div className="section-heading">
+                <span className="section-eyebrow">Resolvemos tus dudas</span>
+                <h2>Preguntas frecuentes</h2>
+              </div>
+              <div className="faq-list">
+                <details>
+                  <summary>¿Necesito crear una cuenta para solicitar un servicio?</summary>
+                  <p>No. Puedes enviar una solicitud como invitado con tus datos de contacto. Si tienes cuenta, también puedes registrarla a tu perfil.</p>
+                </details>
+                <details>
+                  <summary>¿Cómo se comparten mi dirección y teléfono?</summary>
+                  <p>Los datos de domicilio y contacto solo se muestran al técnico aprobado que acepta tu trabajo.</p>
+                </details>
+                <details>
+                  <summary>¿La solicitud tiene algún compromiso?</summary>
+                  <p>Enviar tu solicitud no implica contratar un servicio; coordina directamente los detalles y el presupuesto con el profesional.</p>
+                </details>
+              </div>
+            </section>
+
             <div
+              className="ad-slot"
               style={{
                 padding: '14px',
                 border: '1px dashed rgba(148, 163, 184, 0.28)',
@@ -492,18 +565,36 @@ export default function App() {
         )}
 
         {vista === 'solicitar' && (
-          <SolicitarReparacion usuario={usuario} onVolver={() => setVista('inicio')} />
+          <Suspense fallback={<p className="panel-message">Preparando solicitud...</p>}>
+            <SolicitarReparacion
+              key={`${seleccionServicio?.categoria || 'inicio'}:${seleccionServicio?.subtipo || 'default'}`}
+              usuario={usuario}
+              initialSelection={seleccionServicio}
+              onVolver={() => setVista('inicio')}
+            />
+          </Suspense>
         )}
 
         {vista === 'auth' && (
-          <AuthPortal
-            onVolver={() => setVista('inicio')}
-            onAuthSuccess={() => setVista('inicio')}
-          />
+          <Suspense fallback={<p className="panel-message">Preparando acceso...</p>}>
+            <AuthPortal
+              className="auth-panel"
+              onVolver={() => setVista('inicio')}
+              onAuthSuccess={() => setVista('inicio')}
+            />
+          </Suspense>
         )}
 
         {vista === 'tecnico' && tecnicoAprobado && (
-          <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
+          <Suspense fallback={<p className="panel-message">Cargando panel técnico...</p>}>
+            <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
+          </Suspense>
+        )}
+
+        {vista === 'cliente' && usuario && (
+          <Suspense fallback={<p className="panel-message">Cargando tus solicitudes...</p>}>
+            <MisSolicitudes usuario={usuario} onVolver={() => setVista('inicio')} />
+          </Suspense>
         )}
 
         {vista === 'tecnico' && !tecnicoAprobado && (

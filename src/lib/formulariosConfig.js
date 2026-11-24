@@ -90,5 +90,53 @@ export const CATEGORIAS_REPARACION = {
         ]
       }
     }
+  },
+  reparaciones: {
+    label: 'Reparaciones y mantenimiento',
+    subtipos: {
+      reparacion_general: {
+        label: 'Reparación o mejora del hogar',
+        preguntas: [
+          {
+            id: 'zona_reparacion',
+            label: '¿Qué parte del hogar necesita atención?',
+            tipo: 'select',
+            opciones: ['Cocina', 'Baño', 'Habitación', 'Patio o exterior', 'Otra área']
+          }
+        ]
+      }
+    }
+  },
+  cerrajeria: {
+    label: 'Cerrajería',
+    subtipos: {
+      cerradura: {
+        label: 'Chapas, cerraduras y accesos',
+        preguntas: [
+          {
+            id: 'tipo_cerrajeria',
+            label: '¿Qué necesitas resolver?',
+            tipo: 'select',
+            opciones: ['Abrir una puerta', 'Cambiar cerradura', 'Reparar chapa', 'Instalar cerradura nueva']
+          }
+        ]
+      }
+    }
+  },
+  electrodomesticos: {
+    label: 'Electrodomésticos',
+    subtipos: {
+      diagnostico: {
+        label: 'Diagnóstico o reparación de electrodoméstico',
+        preguntas: [
+          {
+            id: 'tipo_electrodomestico',
+            label: '¿Qué aparato necesita atención?',
+            tipo: 'select',
+            opciones: ['Refrigerador', 'Lavadora', 'Estufa', 'Boiler', 'Otro aparato']
+          }
+        ]
+      }
+    }
   }
 };

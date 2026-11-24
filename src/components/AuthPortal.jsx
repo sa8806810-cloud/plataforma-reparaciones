@@ -3,7 +3,7 @@ import { ArrowLeft, User, Wrench, Mail, Lock, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { LOCALIDADES_REGION } from '../lib/formulariosConfig';
 
-export default function AuthPortal({ onVolver, onAuthSuccess }) {
+export default function AuthPortal({ onVolver, onAuthSuccess, className = 'auth-panel' }) {
   const [modo, setModo] = useState('login');
   const [rol, setRol] = useState('cliente');
   const [nombre, setNombre] = useState('');
@@ -93,7 +93,7 @@ export default function AuthPortal({ onVolver, onAuthSuccess }) {
   };
 
   return (
-    <section style={{ maxWidth: '520px', margin: '0 auto', display: 'grid', gap: '16px' }}>
+    <section className={className} style={{ maxWidth: '520px', margin: '0 auto', display: 'grid', gap: '16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <button
           type="button"

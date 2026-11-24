@@ -17,9 +17,17 @@ import { CATEGORIAS_REPARACION, LOCALIDADES_REGION } from '../lib/formulariosCon
 import { supabase } from '../lib/supabaseClient';
 
 const OPCIONES_URGENCIA = [
-  { id: 'urgente', label: 'Hoy / Urgente', badge: '#ef4444' },
-  { id: 'semana', label: 'Esta semana', badge: '#f59e0b' },
-  { id: 'cotizar', label: 'Sin prisa', badge: '#3b82f6' }
+  { id: 'normal', label: 'Normal', badge: '#38bdf8' },
+  { id: 'hoy_mismo', label: 'Hoy mismo', badge: '#f59e0b' },
+  { id: 'emergencia_24_7', label: 'Emergencia 24/7', badge: '#ef4444' }
+];
+
+const OPCIONES_PRESUPUESTO = [
+  'Aún no lo sé',
+  'Menos de $500 MXN',
+  '$500 a $1,500 MXN',
+  '$1,500 a $3,000 MXN',
+  'Más de $3,000 MXN'
 ];
 
 const CHIPS_RAPIDOS = [
@@ -89,16 +97,23 @@ function formatearFechaLarga(isoStr) {
   });
 }
 
-export default function SolicitarReparacion({ usuario, onVolver }) {
+export default function SolicitarReparacion({ usuario, initialSelection, onVolver }) {
   const usuarioId = usuario?.id || null;
   const categoriasKeys = Object.keys(CATEGORIAS_REPARACION);
+  const categoriaInicial = CATEGORIAS_REPARACION[initialSelection?.categoria]
+    ? initialSelection.categoria
+    : categoriasKeys[0];
   const fechaHoyISO = useMemo(() => obtenerHoyISO(), []);
   const fechaInicialObj = useMemo(() => new Date(), []);
 
-  const [categoria, setCategoria] = useState(categoriasKeys[0]);
+  const [categoria, setCategoria] = useState(categoriaInicial);
   const subtiposKeys = Object.keys(CATEGORIAS_REPARACION[categoria].subtipos);
-  const [subtipo, setSubtipo] = useState(subtiposKeys[0]);
-  const [urgencia, setUrgencia] = useState('urgente');
+  const subtipoInicial = subtiposKeys.includes(initialSelection?.subtipo)
+    ? initialSelection.subtipo
+    : subtiposKeys[0];
+  const [subtipo, setSubtipo] = useState(subtipoInicial);
+  const [urgencia, setUrgencia] = useState('normal');
+  const [presupuesto, setPresupuesto] = useState(OPCIONES_PRESUPUESTO[0]);
   const [fechaElegida, setFechaElegida] = useState(fechaHoyISO);
   const [mesVista, setMesVista] = useState({
     anio: fechaInicialObj.getFullYear(),
@@ -120,6 +135,8 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
 
   const [enviando, setEnviando] = useState(false);
   const [mensaje, setMensaje] = useState('');
+  const [solicitudEnviada, setSolicitudEnviada] = useState(null);
+  const [mensajeCopia, setMensajeCopia] = useState('');
 
   const celdasMes = useMemo(
     () => construirCeldasMes(mesVista.anio, mesVista.mes),
@@ -275,6 +292,18 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
     setEnviando(true);
     setMensaje('');
 
+    const folio = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `FN-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const detallesGuardados = {
+      ...respuestasTecnicas,
+      urgencia,
+      presupuesto_estimado: presupuesto,
+      fecha_solicitada: fechaElegida,
+      ubicacion_gps: ubicacionGPS,
+      folio_solicitud: folio
+    };
+
     const payload = {
       categoria,
       subtipo,
@@ -282,12 +311,7 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
       descripcion,
       nombre_contacto: nombreContacto.trim(),
       telefono_contacto: telefonoContacto.trim(),
-      detalles_tecnicos: {
-        ...respuestasTecnicas,
-        urgencia,
-        fecha_solicitada: fechaElegida,
-        ubicacion_gps: ubicacionGPS
-      },
+      detalles_tecnicos: detallesGuardados,
       localidad,
       direccion,
       referencias_domicilio: referencias
@@ -303,17 +327,46 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
         setMensaje(`No se pudo enviar la solicitud: ${error.message}`);
         return;
       }
-      setMensaje('¡Solicitud guardada correctamente!');
-      setDescripcion('');
-      setDireccion('');
-      setReferencias('');
-      setRespuestasTecnicas({});
+      setSolicitudEnviada({
+        ...payload,
+        folio,
+        urgencia,
+        presupuesto,
+        fecha: fechaElegida
+      });
+      setMensaje('');
     } catch (error) {
       setMensaje(`No se pudo enviar la solicitud: ${error.message}`);
     } finally {
       setEnviando(false);
     }
   };
+
+  const copiarResumen = async () => {
+    const resumen = [
+      `Solicitud FixNow · Folio ${solicitudEnviada.folio}`,
+      `Servicio: ${solicitudEnviada.titulo}`,
+      `Localidad: ${solicitudEnviada.localidad}`,
+      `Fecha: ${formatearFechaLarga(solicitudEnviada.fecha)}`,
+      `Prioridad: ${OPCIONES_URGENCIA.find((op) => op.id === solicitudEnviada.urgencia)?.label || solicitudEnviada.urgencia}`,
+      `Contacto: ${solicitudEnviada.nombre_contacto} · ${solicitudEnviada.telefono_contacto}`,
+      `Dirección: ${solicitudEnviada.direccion}`,
+      `Detalles: ${solicitudEnviada.descripcion}`
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(resumen);
+      setMensajeCopia('Resumen copiado al portapapeles.');
+    } catch (error) {
+      setMensajeCopia(`No se pudo copiar el resumen: ${error.message}`);
+    }
+  };
+
+  const textoWhatsapp = solicitudEnviada
+    ? encodeURIComponent(
+        `Hola, mi folio FixNow es ${solicitudEnviada.folio}. Necesito atención ${OPCIONES_URGENCIA.find((op) => op.id === solicitudEnviada.urgencia)?.label || ''} para ${solicitudEnviada.titulo} en ${solicitudEnviada.localidad}.`
+      )
+    : '';
 
   const tarjetaEstilo = {
     background: 'rgba(17, 24, 39, 0.94)',
@@ -341,7 +394,7 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
   const etiquetaUrgenciaActual = OPCIONES_URGENCIA.find((o) => o.id === urgencia)?.label || '';
 
   return (
-    <section style={{ width: '100%', maxWidth: '720px', margin: '0 auto', display: 'grid', gap: '14px' }}>
+    <section className="form-panel" style={{ width: '100%', maxWidth: '900px', margin: '0 auto', display: 'grid', gap: '14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -390,6 +443,7 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
         </div>
         <div style={{ height: '7px', borderRadius: '999px', background: '#0b1220', overflow: 'hidden' }}>
           <div
+            className="ad-slot"
             style={{
               width: `${porcentajeProgreso}%`,
               height: '100%',
@@ -417,7 +471,50 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
+      {solicitudEnviada && (
+        <section className="form-confirmation" role="status" aria-live="polite">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#86efac' }}>
+            <CheckCircle2 size={26} />
+            <h2>¡Solicitud enviada!</h2>
+          </div>
+          <p>
+            Tu referencia es <strong>{solicitudEnviada.folio}</strong>. Un técnico aprobado de tu
+            zona podrá revisar el servicio y aceptarlo.
+          </p>
+          <p><strong>Servicio:</strong> {solicitudEnviada.titulo}</p>
+          <p><strong>Contacto:</strong> {solicitudEnviada.nombre_contacto} · {solicitudEnviada.telefono_contacto}</p>
+          <p><strong>Ubicación:</strong> {solicitudEnviada.direccion}, {solicitudEnviada.localidad}</p>
+          <p><strong>Fecha:</strong> {formatearFechaLarga(solicitudEnviada.fecha)} · {etiquetaUrgenciaActual}</p>
+          <p><strong>Presupuesto estimado:</strong> {solicitudEnviada.presupuesto}</p>
+          <p><strong>Detalles:</strong> {solicitudEnviada.descripcion}</p>
+          {mensajeCopia && <p role="status">{mensajeCopia}</p>}
+          <div className="confirmation-actions">
+            <button type="button" onClick={copiarResumen}>
+              <ClipboardList size={16} /> Copiar resumen
+            </button>
+            {solicitudEnviada.urgencia === 'emergencia_24_7' && (
+              <a
+                className="whatsapp-link"
+                href={`https://wa.me/?text=${textoWhatsapp}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Contactar por WhatsApp
+              </a>
+            )}
+            <button type="button" onClick={onVolver}>Volver al inicio</button>
+          </div>
+          <p className="field-note">
+            El folio es una referencia para identificar el resumen; no es una consulta de seguimiento
+            automática.
+          </p>
+        </section>
+      )}
+
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: solicitudEnviada ? 'none' : 'grid', gap: '14px' }}
+      >
         <div style={tarjetaEstilo}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#93c5fd', fontWeight: 600, fontSize: '0.95rem' }}>
             <ClipboardList size={18} />
@@ -606,6 +703,20 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
               })}
             </div>
           </div>
+
+          <label style={{ display: 'grid', gap: '6px' }}>
+            <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>Presupuesto estimado</span>
+            <select
+              value={presupuesto}
+              onChange={(e) => setPresupuesto(e.target.value)}
+              style={campoEstilo}
+            >
+              {OPCIONES_PRESUPUESTO.map((opcion) => (
+                <option key={opcion} value={opcion}>{opcion}</option>
+              ))}
+            </select>
+            <span className="field-note">Es una referencia para el técnico, no una cotización final.</span>
+          </label>
 
           {preguntasActuales.map((preg) => (
             <label key={preg.id} style={{ display: 'grid', gap: '6px' }}>
@@ -818,12 +929,14 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
           </div>
 
           <label style={{ display: 'grid', gap: '6px' }}>
-            <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>Detalles adicionales</span>
+            <span style={{ fontSize: '0.92rem', color: '#e2e8f0' }}>
+              Detalles clave del problema
+            </span>
             <textarea
               rows={3}
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Describe qué se ocupa hacer, horarios disponibles, etc."
+              placeholder="Describe qué ocurre, desde cuándo, medidas, ruidos, modelo del aparato u otros detalles."
               required
               style={{ ...campoEstilo, resize: 'vertical' }}
             />
@@ -883,6 +996,7 @@ export default function SolicitarReparacion({ usuario, onVolver }) {
 
           {mensaje && (
             <p
+              role="alert"
               style={{
                 margin: 0,
                 padding: '12px',
