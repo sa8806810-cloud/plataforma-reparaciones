@@ -1,20 +1,28 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Wrench,
+  BadgeCheck,
   UserCheck,
   LogOut,
   Zap,
   Droplets,
   Plug,
   Hammer,
-  ChevronRight,
   Sparkles,
   KeyRound,
   Refrigerator,
   ShieldCheck,
   Clock3,
   CircleCheck,
-  LayoutDashboard
+  LayoutDashboard,
+  Menu,
+  X,
+  Fan,
+  House,
+  Search,
+  ArrowRight,
+  Star,
+  UserRound
 } from 'lucide-react';
 import './App.css';
 import { supabase } from './lib/supabaseClient';
@@ -90,12 +98,36 @@ const SERVICIOS_DESTACADOS = [
     acento: '#fb923c',
     fondoIcono: 'rgba(251, 146, 60, 0.15)',
     bordeIcono: 'rgba(251, 146, 60, 0.35)'
+  },
+  {
+    titulo: 'Aire acondicionado',
+    detalle: 'Instalación, limpieza y diagnóstico de equipos',
+    icono: Fan,
+    categoria: 'electrodomesticos',
+    subtipo: 'diagnostico',
+    acento: '#0ea5e9',
+    fondoIcono: 'rgba(14, 165, 233, 0.12)',
+    bordeIcono: 'rgba(14, 165, 233, 0.28)'
+  },
+  {
+    titulo: 'Mantenimiento del hogar',
+    detalle: 'Ajustes, montaje y mantenimiento preventivo',
+    icono: House,
+    categoria: 'reparaciones',
+    subtipo: 'reparacion_general',
+    acento: '#10b981',
+    fondoIcono: 'rgba(16, 185, 129, 0.12)',
+    bordeIcono: 'rgba(16, 185, 129, 0.28)'
   }
 ];
 
 export default function App() {
   const [vista, setVista] = useState('inicio');
   const [seleccionServicio, setSeleccionServicio] = useState(null);
+  const [servicioRapido, setServicioRapido] = useState('');
+  const [filtroServicios, setFiltroServicios] = useState('');
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+  const [audienciaPasos, setAudienciaPasos] = useState('cliente');
   const [perfilTecnicoId, setPerfilTecnicoId] = useState(null);
   const [sesion, setSesion] = useState(null);
   const [perfilUsuario, setPerfilUsuario] = useState({
@@ -474,6 +506,7 @@ export default function App() {
 
   const navegarA = (id) => (evento) => {
     evento.preventDefault();
+    setMenuMovilAbierto(false);
     if (vista === 'inicio') {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
@@ -486,126 +519,100 @@ export default function App() {
     setSeleccionServicio(
       servicio ? { categoria: servicio.categoria, subtipo: servicio.subtipo } : null
     );
+    setMenuMovilAbierto(false);
     setVista('solicitar');
   };
 
   return (
     <div
-      className="app-shell"
+      className={`app-shell${vista === 'inicio' ? ' landing-theme' : ''}${vista === 'solicitar' ? ' request-theme' : ''}`}
       style={{
         '--brand-primary': configuracionSitio.primaryColor,
         minHeight: '100vh',
-        background:
-          'radial-gradient(circle at 50% -10%, #17284a 0%, #0b1120 48%, #060911 100%)',
-        color: '#f8fafc',
+        background: vista === 'inicio'
+          ? 'linear-gradient(180deg, #f8fafc 0%, #ffffff 48%, #f8fafc 100%)'
+          : 'radial-gradient(circle at 50% -10%, #17284a 0%, #0b1120 48%, #060911 100%)',
+        color: vista === 'inicio' ? '#0f172a' : '#f8fafc',
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         padding: 'clamp(12px, 3vw, 24px) clamp(12px, 3vw, 18px) 40px clamp(12px, 3vw, 18px)',
         boxSizing: 'border-box'
       }}
     >
-      <header
-        className="app-navbar"
-      >
-        <button
-          className="brand-lockup"
-          type="button"
-          onClick={navegarA('inicio')}
-          aria-label={`${configuracionSitio.brandName}, volver al inicio`}
-        >
-          <span className="brand-mark">
-            <Wrench size={20} color="#60a5fa" />
-          </span>
-          <span>
-            <span className="brand-name">{configuracionSitio.brandName}</span>
-            <span className="brand-subtitle">{configuracionSitio.tagline}</span>
-          </span>
-        </button>
+      <header className="app-navbar">
+        {configuracionSitio.bannerEnabled && configuracionSitio.bannerText && (
+          <div className="site-promo-banner"><Sparkles size={15} />{configuracionSitio.bannerText}</div>
+        )}
+        <div className="navbar-inner">
+          <button
+            className="brand-lockup"
+            type="button"
+            onClick={navegarA('inicio')}
+            aria-label={`${configuracionSitio.brandName}, volver al inicio`}
+          >
+            <span className="brand-mark"><Wrench size={20} /></span>
+            <span>
+              <span className="brand-name">{configuracionSitio.brandName}</span>
+              <span className="brand-subtitle">{configuracionSitio.tagline}</span>
+            </span>
+          </button>
 
-        <nav className="nav-links" aria-label="Navegación principal">
-          <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
-          <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
-          {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
-          {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos</a>}
-          {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
-        </nav>
+          <nav className={`nav-links${menuMovilAbierto ? ' mobile-open' : ''}`} aria-label="Navegación principal">
+            <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
+            {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
+            {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>}
+            {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
+          </nav>
 
-        <div className="nav-actions">
-          {usuario ? (
-            <>
-              <span
-                className="nav-user-label"
-              >
-                {nombreUsuario}
-                {esAdminActivo
-                  ? ' · Administrador'
-                  : cuentaRestringida
-                    ? ` · Cuenta ${perfilUsuario.estadoCuenta}`
-                  : tecnicoAprobado
-                  ? ' · Técnico aprobado'
-                  : rolUsuario === 'tecnico'
-                    ? ' · Técnico pendiente de aprobación'
-                    : rolUsuario
-                      ? ` · ${rolUsuario}`
-                      : ''}
-              </span>
-              {adminAccess.checking || perfilUsuario.usuarioId !== usuarioId ? (
-                <span className="nav-user-label">Verificando cuenta…</span>
-              ) : (
-                <button
-                  type="button"
-                  className="panel-nav-button"
-                  onClick={() => setVista(cuentaRestringida ? 'cuenta-bloqueada' : esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
-                >
-                  <LayoutDashboard size={15} />
-                  Mi Panel
+          <div className="nav-actions">
+            {usuario ? (
+              <>
+                <span className="nav-user-label">
+                  {nombreUsuario}
+                  {esAdminActivo
+                    ? ' · Administrador'
+                    : cuentaRestringida
+                      ? ` · Cuenta ${perfilUsuario.estadoCuenta}`
+                      : tecnicoAprobado
+                        ? ' · Técnico aprobado'
+                        : rolUsuario === 'tecnico'
+                          ? ' · Técnico pendiente de aprobación'
+                          : rolUsuario
+                            ? ` · ${rolUsuario}`
+                            : ''}
+                </span>
+                {adminAccess.checking || perfilUsuario.usuarioId !== usuarioId ? (
+                  <span className="nav-user-label">Verificando cuenta…</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="panel-nav-button"
+                    onClick={() => setVista(cuentaRestringida ? 'cuenta-bloqueada' : esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
+                  >
+                    <LayoutDashboard size={15} />Mi Panel
+                  </button>
+                )}
+                <button type="button" className="nav-logout-button" onClick={handleCerrarSesion}>
+                  <LogOut size={15} /><span>Salir</span>
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={handleCerrarSesion}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  minHeight: '38px',
-                  padding: '8px 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #334155',
-                  background: '#1e293b',
-                  color: '#f8fafc',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer'
-                }}
-              >
-                <LogOut size={15} />
-                <span>Salir</span>
+              </>
+            ) : (
+              <button className="nav-login-button" type="button" onClick={() => setVista('auth')}>
+                <UserCheck size={16} /><span>Iniciar sesión</span>
               </button>
-            </>
-          ) : (
-            <button
-              className="nav-login-button"
-              type="button"
-              onClick={() => setVista('auth')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '7px',
-                minHeight: '40px',
-                padding: '9px 15px',
-                borderRadius: '12px',
-                border: '1px solid rgba(96, 165, 250, 0.5)',
-                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: '0.92rem',
-                cursor: 'pointer',
-                boxShadow: '0 6px 16px rgba(37, 99, 235, 0.35)'
-              }}
-            >
-              <UserCheck size={16} />
-              <span>Entrar / Registrarse</span>
+            )}
+            <button type="button" className="nav-service-button" onClick={() => solicitarServicio()}>
+              Pedir servicio<ArrowRight size={16} />
             </button>
-          )}
+          </div>
+          <button
+            type="button"
+            className="nav-menu-toggle"
+            aria-label={menuMovilAbierto ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={menuMovilAbierto}
+            onClick={() => setMenuMovilAbierto((abierto) => !abierto)}
+          >
+            {menuMovilAbierto ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
       </header>
 
@@ -681,184 +688,125 @@ export default function App() {
 
         {vista === 'inicio' && (
           <section className="home-content" id="inicio">
-            {configuracionSitio.bannerEnabled && configuracionSitio.bannerText && (
-              <div className="site-promo-banner"><Sparkles size={16} />{configuracionSitio.bannerText}</div>
-            )}
-            <div
-              className="hero-panel"
-            >
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <span
-                  className="hero-kicker"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    color: '#93c5fd',
-                    background: 'rgba(37, 99, 235, 0.16)',
-                    border: '1px solid rgba(96, 165, 250, 0.32)',
-                    padding: '6px 12px',
-                    borderRadius: '999px'
-                  }}
-                >
-                  <Sparkles size={14} /> Solicitudes rápidas con ubicación y calendario
-                </span>
-              </div>
-
+            <section className="hero-panel">
               <div className="hero-copy">
-                <h1>
-                  {configuracionSitio.heroTitle}
-                </h1>
-                <p style={{ margin: 0, color: '#cbd5e1', fontSize: 'clamp(0.95rem, 2.5vw, 1.04rem)', lineHeight: 1.55 }}>
-                  {configuracionSitio.heroSubtitle}
-                </p>
+                <span className="hero-kicker"><span className="status-pulse" />Asistencia rápida y técnicos verificados en tu zona</span>
+                <h1>{configuracionSitio.heroTitle}</h1>
+                <p>{configuracionSitio.heroSubtitle}</p>
+                <div className="hero-quick-action">
+                  <label className="quick-service-select">
+                    <Wrench size={17} />
+                    <select value={servicioRapido} onChange={(event) => setServicioRapido(event.target.value)} aria-label="Selecciona un servicio">
+                      <option value="">¿Qué servicio necesitas?</option>
+                      {SERVICIOS_DESTACADOS.map((item) => <option key={item.titulo} value={item.titulo}>{item.titulo}</option>)}
+                    </select>
+                  </label>
+                  <button
+                    className="hero-primary-button"
+                    type="button"
+                    onClick={() => solicitarServicio(SERVICIOS_DESTACADOS.find((item) => item.titulo === servicioRapido) || null)}
+                  >
+                    {configuracionSitio.primaryAction}<ArrowRight size={18} />
+                  </button>
+                </div>
+                <div className="hero-secondary-row">
+                  <span>¿Eres técnico?</span>
+                  <button type="button" className="text-action" onClick={() => setVista('auth')}>
+                    {configuracionSitio.secondaryAction}<ArrowRight size={15} />
+                  </button>
+                </div>
+                <div className="trust-row" aria-label="Beneficios">
+                  <span className="trust-item"><ShieldCheck size={17} />Técnicos verificados</span>
+                  <span className="trust-item"><Clock3 size={17} />Respuesta en minutos</span>
+                  <span className="trust-item"><CircleCheck size={17} />Sin registro obligatorio</span>
+                </div>
               </div>
-
-              <div className="hero-actions" style={{ display: 'grid', gap: '12px', maxWidth: '540px', width: '100%', margin: '0 auto' }}>
-                <button
-                  className="hero-primary-button"
-                  type="button"
-                  onClick={() => solicitarServicio()}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    minHeight: '52px',
-                    padding: '15px 20px',
-                    borderRadius: '15px',
-                    border: 'none',
-                    background: `linear-gradient(135deg, ${configuracionSitio.primaryColor} 0%, ${configuracionSitio.primaryColor} 100%)`,
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: '1.05rem',
-                    cursor: 'pointer',
-                    boxShadow: '0 10px 24px rgba(37, 99, 235, 0.4)'
-                  }}
-                >
-                  <span>{configuracionSitio.primaryAction}</span>
-                  <ChevronRight size={21} />
-                </button>
-
-                <button
-                  className="hero-secondary-button"
-                  type="button"
-                  onClick={() => setVista('auth')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    minHeight: '48px',
-                    padding: '13px 20px',
-                    borderRadius: '15px',
-                    border: '1px solid #334155',
-                    background: 'rgba(24, 34, 52, 0.9)',
-                    color: '#f1f5f9',
-                    fontWeight: 600,
-                    fontSize: '0.98rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <span>{configuracionSitio.secondaryAction}</span>
-                  <ChevronRight size={19} color="#94a3b8" />
-                </button>
+              <div className="hero-visual" aria-label="Ejemplo de seguimiento de una solicitud">
+                <div className="visual-orbit orbit-one" />
+                <div className="visual-orbit orbit-two" />
+                <div className="visual-main-card">
+                  <div className="visual-card-top"><span className="visual-live-dot" />Vista de ejemplo <span>Ahora</span></div>
+                  <div className="visual-service-line"><span className="visual-icon"><Zap size={21} /></span><div><strong>Reparación eléctrica</strong><small>Falla en instalación · Zona centro</small></div></div>
+                  <div className="visual-progress"><span /><span /><span /></div>
+                  <div className="visual-technician">
+                    <div className="visual-avatar"><UserRound size={20} /></div>
+                    <div><strong>Técnico verificado</strong><small><Star size={12} fill="currentColor" /> 4.9 · En camino</small></div>
+                    <BadgeCheck size={19} />
+                  </div>
+                </div>
+                <div className="visual-float visual-float-top"><ShieldCheck size={17} /><span><strong>Perfiles verificados</strong><small>Atención confiable</small></span></div>
+                <div className="visual-float visual-float-bottom"><Clock3 size={17} /><span><strong>Respuesta rápida</strong><small>Coordina directamente</small></span></div>
               </div>
+            </section>
 
-              <div className="trust-row" aria-label="Beneficios">
-                <span className="trust-item"><ShieldCheck size={16} /> Técnicos verificados</span>
-                <span className="trust-item"><Clock3 size={16} /> Respuesta rápida</span>
-                <span className="trust-item"><CircleCheck size={16} /> Atención garantizada</span>
-              </div>
-
-              <div className="section-heading" id="servicios">
-                <span className="section-eyebrow">Servicios para tu hogar</span>
+            <section className="services-section" id="servicios">
+              <div className="section-heading">
+                <span className="section-eyebrow">Soluciones para tu hogar</span>
                 <h2>¿Qué necesitas resolver?</h2>
-                <p>Elige una categoría para iniciar tu solicitud con el servicio preseleccionado.</p>
+                <p>Encuentra el servicio adecuado y solicita ayuda en unos pocos pasos.</p>
               </div>
-
-              <div
-                className="service-grid"
-              >
+              <label className="service-search">
+                <Search size={18} />
+                <input value={filtroServicios} onChange={(event) => setFiltroServicios(event.target.value)} placeholder="Buscar electricidad, plomería..." />
+              </label>
+              <div className="service-grid">
                 {SERVICIOS_DESTACADOS.filter((item) =>
-                  configuracionSitio.featuredCategories.includes(
-                    item.subtipo === 'instalacion_sin_toma' ? 'instalacion' : item.categoria
-                  )
+                  configuracionSitio.featuredCategories.includes(item.subtipo === 'instalacion_sin_toma' ? 'instalacion' : item.categoria) &&
+                  `${item.titulo} ${item.detalle}`.toLowerCase().includes(filtroServicios.trim().toLowerCase())
                 ).map((item) => {
                   const Icono = item.icono;
                   return (
-                    <button
-                      className="service-card"
-                      key={item.titulo}
-                      type="button"
-                      onClick={() => solicitarServicio(item)}
-                      aria-label={`Solicitar servicio de ${item.titulo}`}
-                      style={{
-                        display: 'grid',
-                        gap: '6px',
-                        textAlign: 'left',
-                        padding: '14px',
-                        borderRadius: '16px',
-                        border: '1px solid rgba(148, 163, 184, 0.14)',
-                        background: 'rgba(11, 18, 32, 0.78)',
-                        color: '#f8fafc',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <span className="service-icon"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '34px',
-                          height: '34px',
-                          borderRadius: '10px',
-                          background: item.fondoIcono,
-                          border: `1px solid ${item.bordeIcono}`
-                        }}
-                      >
-                        <Icono size={17} color={item.acento} />
-                      </span>
-                      <strong style={{ fontSize: '0.94rem' }}>{item.titulo}</strong>
-                      <span style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.35 }}>
-                        {item.detalle}
-                      </span>
+                    <button className="service-card" key={item.titulo} type="button" onClick={() => solicitarServicio(item)} aria-label={`Solicitar servicio de ${item.titulo}`}>
+                      <span className="service-icon" style={{ background: item.fondoIcono, borderColor: item.bordeIcono }}><Icono size={20} color={item.acento} /></span>
+                      <strong>{item.titulo}</strong>
+                      <span>{item.detalle}</span>
+                      <span className="service-card-action">Solicitar <ArrowRight size={15} /></span>
                     </button>
                   );
                 })}
+                {SERVICIOS_DESTACADOS.filter((item) =>
+                  configuracionSitio.featuredCategories.includes(item.subtipo === 'instalacion_sin_toma' ? 'instalacion' : item.categoria) &&
+                  `${item.titulo} ${item.detalle}`.toLowerCase().includes(filtroServicios.trim().toLowerCase())
+                ).length === 0 && <p className="service-empty">No encontramos servicios para “{filtroServicios}”. Prueba con otra búsqueda.</p>}
               </div>
-            </div>
+            </section>
 
             {configuracionSitio.showHowItWorks && <section className="how-section" id="como-funciona">
               <div className="section-heading">
                 <span className="section-eyebrow">Simple y transparente</span>
                 <h2>Cómo funciona FixNow</h2>
-                <p>Del primer mensaje a la solución, te acompañamos en cada paso.</p>
+                <p>Una experiencia sencilla, tanto si necesitas ayuda como si ofreces tus servicios.</p>
+              </div>
+              <div className="audience-tabs" role="tablist" aria-label="Cómo funciona">
+                <button type="button" role="tab" aria-selected={audienciaPasos === 'cliente'} className={audienciaPasos === 'cliente' ? 'active' : ''} onClick={() => setAudienciaPasos('cliente')}>Necesito un servicio</button>
+                <button type="button" role="tab" aria-selected={audienciaPasos === 'tecnico'} className={audienciaPasos === 'tecnico' ? 'active' : ''} onClick={() => setAudienciaPasos('tecnico')}>Soy técnico / trabajador</button>
               </div>
               <div className="steps-grid">
-                <article className="step-card">
-                  <span className="step-number">01</span>
-                  <h3>Cuéntanos qué necesitas</h3>
-                  <p>Describe el problema, elige tu zona y dinos cuándo te conviene recibir atención.</p>
-                </article>
-                <article className="step-card">
-                  <span className="step-number">02</span>
-                  <h3>Un profesional acepta</h3>
-                  <p>Un técnico aprobado de tu zona revisa los detalles y acepta el trabajo.</p>
-                </article>
-                <article className="step-card">
-                  <span className="step-number">03</span>
-                  <h3>Recibe atención confiable</h3>
-                  <p>Te contacta para coordinar la visita y resolver tu necesidad con claridad.</p>
-                </article>
+                {(audienciaPasos === 'cliente'
+                  ? [
+                    ['01', 'Describe tu necesidad', 'Cuéntanos qué sucede y comparte tu zona, sin necesidad de registrarte.'],
+                    ['02', 'Un técnico acepta tu solicitud', 'Un profesional verificado revisa la información y acepta el trabajo.'],
+                    ['03', 'Coordina y da seguimiento', 'Recibe atención, conoce el estado y mantén el contacto con tu técnico.']
+                  ]
+                  : [
+                    ['01', 'Crea tu perfil profesional', 'Comparte tus especialidades, experiencia y zona de cobertura.'],
+                    ['02', 'Completa la verificación', 'El equipo FixNow revisará tu perfil antes de habilitar trabajos.'],
+                    ['03', 'Acepta trabajos cercanos', 'Consulta solicitudes disponibles y administra tus servicios desde tu panel.']
+                  ]).map(([numero, titulo, descripcion]) => (
+                  <article className="step-card" key={numero}>
+                    <span className="step-number">{numero}</span>
+                    <h3>{titulo}</h3>
+                    <p>{descripcion}</p>
+                  </article>
+                ))}
               </div>
+              {audienciaPasos === 'tecnico' && <button type="button" className="steps-cta" onClick={() => setVista('auth')}>Crear perfil de trabajador <ArrowRight size={16} /></button>}
             </section>}
 
             {configuracionSitio.showTechnicians && <Suspense fallback={<p className="panel-message">Cargando directorio de técnicos...</p>}>
               <DirectorioTecnicos
                 excluirUsuarioId={usuarioId}
+                onRegistro={() => setVista('auth')}
                 onVerPerfil={(id) => {
                   setPerfilTecnicoId(id);
                   setVista('perfil-tecnico');
@@ -1033,28 +981,37 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        <div className="footer-brand">
-          <span className="brand-mark"><Wrench size={18} /></span>
-          <div>
-            <strong>{configuracionSitio.brandName}</strong>
-            <span>{configuracionSitio.tagline}</span>
+        <div className="footer-column footer-brand-column">
+          <div className="footer-brand">
+            <span className="brand-mark"><Wrench size={18} /></span>
+            <div>
+              <strong>{configuracionSitio.brandName}</strong>
+              <span>{configuracionSitio.tagline}</span>
+            </div>
           </div>
+          <p>{configuracionSitio.footerText}</p>
         </div>
-        <nav className="footer-links" aria-label="Navegación del pie de página">
-          <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
-          <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
-          {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
-          {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>}
-          {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
-          <button
-            type="button"
-            className="footer-admin-link"
-            onClick={() => setVista(esAdminActivo ? 'admin' : 'auth-admin')}
-          >
-            Portal administrativo
-          </button>
-        </nav>
-        {configuracionSitio.supportPhone && <a className="footer-support-link" href={`https://wa.me/${configuracionSitio.supportPhone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">WhatsApp: {configuracionSitio.supportPhone}</a>}
+        <div className="footer-column">
+          <strong className="footer-column-title">Explora</strong>
+          <nav className="footer-links" aria-label="Navegación del pie de página">
+            <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
+            <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
+            {configuracionSitio.showHowItWorks && <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>}
+            {configuracionSitio.showTechnicians && <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>}
+            {configuracionSitio.showFaq && <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>}
+          </nav>
+        </div>
+        <div className="footer-column">
+          <strong className="footer-column-title">Para profesionales</strong>
+          <button type="button" className="footer-action-link" onClick={() => setVista('auth')}>Ofrece tus servicios <ArrowRight size={14} /></button>
+          <button type="button" className="footer-admin-link" onClick={() => setVista(esAdminActivo ? 'admin' : 'auth-admin')}>Portal administrativo</button>
+        </div>
+        <div className="footer-column">
+          <strong className="footer-column-title">Contacto y soporte</strong>
+          {configuracionSitio.supportPhone
+            ? <a className="footer-support-link" href={`https://wa.me/${configuracionSitio.supportPhone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">WhatsApp: {configuracionSitio.supportPhone}</a>
+            : <span className="footer-muted">Estamos aquí para ayudarte.</span>}
+        </div>
         <span className="footer-copyright">© {new Date().getFullYear()} {configuracionSitio.brandName}. {configuracionSitio.footerText}</span>
       </footer>
     </div>

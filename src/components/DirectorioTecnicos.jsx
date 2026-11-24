@@ -7,7 +7,7 @@ function iniciales(nombre = '') {
   return nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || '').join('').toUpperCase() || 'FN';
 }
 
-export default function DirectorioTecnicos({ onVerPerfil, excluirUsuarioId }) {
+export default function DirectorioTecnicos({ onVerPerfil, onRegistro, excluirUsuarioId }) {
   const [tecnicos, setTecnicos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -49,7 +49,14 @@ export default function DirectorioTecnicos({ onVerPerfil, excluirUsuarioId }) {
       {cargando && <p className="panel-message">Cargando profesionales...</p>}
       {error && <p role="alert" className="panel-message panel-error">{error}</p>}
       {!cargando && !error && tecnicos.length === 0 && (
-        <p className="panel-message">Pronto encontrarás profesionales verificados en tu zona.</p>
+        <div className="directory-empty">
+          <span className="directory-empty-icon"><Wrench size={22} /></span>
+          <h3>Estamos sumando profesionales</h3>
+          <p>Los perfiles aparecerán aquí cuando completen su registro y verificación.</p>
+          <button type="button" className="panel-action-button panel-primary-action" onClick={onRegistro}>
+            Ofrecer mis servicios
+          </button>
+        </div>
       )}
       {!cargando && tecnicos.length > 0 && (
         <div className="directory-grid">
