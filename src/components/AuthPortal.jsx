@@ -191,7 +191,7 @@ export default function AuthPortal({
             }}
           >
             <User size={18} />
-            <span>Soy Cliente</span>
+            <span>Soy Cliente <small>(busco un servicio)</small></span>
           </button>
           <button
             type="button"
@@ -211,7 +211,7 @@ export default function AuthPortal({
             }}
           >
             <Wrench size={18} />
-            <span>Soy Técnico</span>
+            <span>Soy Trabajador / Técnico <small>(ofrezco mis servicios)</small></span>
           </button>
         </div>
       )}

@@ -24,6 +24,8 @@ const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const TrabajosTecnico = lazy(() => import('./components/TrabajosTecnico'));
 const MisSolicitudes = lazy(() => import('./components/MisSolicitudes'));
 const PanelAdministrador = lazy(() => import('./components/PanelAdministrador'));
+const DirectorioTecnicos = lazy(() => import('./components/DirectorioTecnicos'));
+const PerfilTrabajador = lazy(() => import('./components/PerfilTrabajador'));
 
 const SERVICIOS_DESTACADOS = [
   {
@@ -91,7 +93,14 @@ const SERVICIOS_DESTACADOS = [
 export default function App() {
   const [vista, setVista] = useState('inicio');
   const [seleccionServicio, setSeleccionServicio] = useState(null);
+  const [perfilTecnicoId, setPerfilTecnicoId] = useState(null);
   const [sesion, setSesion] = useState(null);
+  const [perfilUsuario, setPerfilUsuario] = useState({
+    usuarioId: null,
+    rol: '',
+    nombre: '',
+    error: ''
+  });
   const [avisoSesion, setAvisoSesion] = useState('');
   const [adminAccess, setAdminAccess] = useState({
     usuarioId: null,
@@ -102,6 +111,7 @@ export default function App() {
   });
   const cerrandoPorConflicto = useRef(false);
   const inicioAdminEnCurso = useRef({ usuarioId: null, promesa: null });
+  const destinoNavegacion = useRef(null);
   const [estadoAprobacion, setEstadoAprobacion] = useState({
     usuarioId: null,
     aprobado: false,
@@ -130,7 +140,41 @@ export default function App() {
 
   const usuario = sesion?.user || null;
   const usuarioId = usuario?.id || null;
-  const tecnicoSolicitante = usuario?.user_metadata?.rol === 'tecnico';
+  const rolUsuario = perfilUsuario.usuarioId === usuarioId ? perfilUsuario.rol : '';
+  const tecnicoSolicitante = rolUsuario === 'tecnico';
+
+  useEffect(() => {
+    if (!usuarioId) return undefined;
+    let montado = true;
+    supabase
+      .from('perfiles')
+      .select('rol, nombre')
+      .eq('user_id', usuarioId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!montado) return;
+        setPerfilUsuario({
+          usuarioId,
+          rol: data?.rol || '',
+          nombre: data?.nombre || '',
+          error: error?.message || (!data ? 'No se encontró el perfil de esta cuenta.' : '')
+        });
+      })
+      .catch((error) => {
+        if (montado) {
+          setPerfilUsuario({
+            usuarioId,
+            rol: '',
+            nombre: '',
+            error: error.message
+          });
+        }
+      });
+
+    return () => {
+      montado = false;
+    };
+  }, [usuarioId]);
 
   useEffect(() => {
     if (!usuarioId || !tecnicoSolicitante) {
@@ -299,6 +343,18 @@ export default function App() {
     };
   }, [adminAccess.isAdmin, adminAccess.token, usuarioId]);
 
+  useEffect(() => {
+    if (vista !== 'inicio' || !destinoNavegacion.current) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(destinoNavegacion.current)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+      destinoNavegacion.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [vista]);
+
   const handleCerrarSesion = async () => {
     setAvisoSesion('');
     try {
@@ -321,8 +377,9 @@ export default function App() {
     }
   };
 
-  const nombreUsuario = usuario?.user_metadata?.nombre || usuario?.email || '';
-  const rolUsuario = usuario?.user_metadata?.rol || '';
+  const nombreUsuario = perfilUsuario.usuarioId === usuarioId
+    ? perfilUsuario.nombre || usuario?.email || ''
+    : usuario?.email || '';
   const esAdminActivo = adminAccess.usuarioId === usuarioId && adminAccess.isAdmin;
   const tecnicoAprobado =
     tecnicoSolicitante &&
@@ -331,10 +388,12 @@ export default function App() {
 
   const navegarA = (id) => (evento) => {
     evento.preventDefault();
-    setVista('inicio');
-    window.setTimeout(() => {
+    if (vista === 'inicio') {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
+      return;
+    }
+    destinoNavegacion.current = id;
+    setVista('inicio');
   };
 
   const solicitarServicio = (servicio = null) => {
@@ -379,6 +438,7 @@ export default function App() {
           <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
           <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
           <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
+          <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos</a>
           <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
         </nav>
 
@@ -399,8 +459,8 @@ export default function App() {
                       ? ` · ${rolUsuario}`
                       : ''}
               </span>
-              {adminAccess.checking ? (
-                <span className="nav-user-label">Verificando acceso…</span>
+              {adminAccess.checking || perfilUsuario.usuarioId !== usuarioId ? (
+                <span className="nav-user-label">Verificando cuenta…</span>
               ) : (
                 <button
                   type="button"
@@ -479,6 +539,11 @@ export default function App() {
         {adminAccess.error && usuario && (
           <p role="alert" className="panel-message panel-error">
             No se pudo validar el acceso administrativo: {adminAccess.error}
+          </p>
+        )}
+        {perfilUsuario.usuarioId === usuarioId && perfilUsuario.error && (
+          <p role="alert" className="panel-message panel-error">
+            No se pudo cargar el perfil de la cuenta: {perfilUsuario.error}
           </p>
         )}
         {tecnicoSolicitante &&
@@ -670,6 +735,16 @@ export default function App() {
               </div>
             </section>
 
+            <Suspense fallback={<p className="panel-message">Cargando directorio de técnicos...</p>}>
+              <DirectorioTecnicos
+                excluirUsuarioId={usuarioId}
+                onVerPerfil={(id) => {
+                  setPerfilTecnicoId(id);
+                  setVista('perfil-tecnico');
+                }}
+              />
+            </Suspense>
+
             <section className="faq-section" id="preguntas">
               <div className="section-heading">
                 <span className="section-eyebrow">Resolvemos tus dudas</span>
@@ -751,18 +826,36 @@ export default function App() {
           </Suspense>
         )}
 
+        {vista === 'perfil-tecnico' && perfilTecnicoId && (
+          <Suspense fallback={<p className="panel-message">Cargando perfil profesional...</p>}>
+            <PerfilTrabajador
+              key={perfilTecnicoId}
+              usuario={usuario}
+              trabajadorId={perfilTecnicoId}
+              verificadoOverride
+              onVolver={() => setVista(
+                !usuario ? 'inicio' : esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : rolUsuario === 'cliente' ? 'cliente' : 'inicio'
+              )}
+            />
+          </Suspense>
+        )}
+
         {vista === 'tecnico' && tecnicoAprobado && (
           <Suspense fallback={<p className="panel-message">Cargando panel técnico...</p>}>
             <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
           </Suspense>
         )}
 
-        {vista === 'cliente' && usuario && (
+        {vista === 'cliente' && usuario && rolUsuario === 'cliente' && (
           <Suspense fallback={<p className="panel-message">Cargando tus solicitudes...</p>}>
             <MisSolicitudes
               usuario={usuario}
               onVolver={() => setVista('inicio')}
               onNuevaSolicitud={() => solicitarServicio()}
+              onVerPerfilTecnico={(id) => {
+                setPerfilTecnicoId(id);
+                setVista('perfil-tecnico');
+              }}
             />
           </Suspense>
         )}
@@ -822,6 +915,7 @@ export default function App() {
           <a href="#inicio" onClick={navegarA('inicio')}>Inicio</a>
           <a href="#servicios" onClick={navegarA('servicios')}>Servicios</a>
           <a href="#como-funciona" onClick={navegarA('como-funciona')}>Cómo funciona</a>
+          <a href="#tecnicos" onClick={navegarA('tecnicos')}>Técnicos verificados</a>
           <a href="#preguntas" onClick={navegarA('preguntas')}>Preguntas frecuentes</a>
           <button
             type="button"

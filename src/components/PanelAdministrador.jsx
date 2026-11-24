@@ -219,6 +219,8 @@ export default function PanelAdministrador({ usuario, sessionToken, onVolver, on
         <MetricCard icon={Wrench} label="En curso" value={resumen?.en_curso} />
         <MetricCard icon={CheckCircle2} label="Completadas" value={resumen?.completadas} />
         <MetricCard icon={Users} label="Técnicos activos" value={resumen?.tecnicos_activos} />
+        <MetricCard icon={UserRound} label="Clientes registrados" value={resumen?.clientes} />
+        <MetricCard icon={Wrench} label="Trabajadores registrados" value={resumen?.trabajadores} />
       </div>
 
       <div className="admin-tabs" role="tablist" aria-label="Gestión administrativa">
@@ -257,12 +259,16 @@ export default function PanelAdministrador({ usuario, sessionToken, onVolver, on
           <div className="admin-list">
             {tecnicos.map((tecnico) => (
               <article key={tecnico.tecnico_id} className="admin-technician-card">
-                <div className="admin-person-icon"><UserRound size={20} /></div>
+                <div className="admin-person-icon">
+                  {tecnico.avatar_url && /^https:\/\/\S+$/i.test(tecnico.avatar_url)
+                    ? <img src={tecnico.avatar_url} alt="" referrerPolicy="no-referrer" />
+                    : <UserRound size={20} />}
+                </div>
                 <div className="admin-person-details">
                   <strong>{tecnico.nombre || 'Sin nombre'}</strong>
                   <span>{tecnico.correo}</span>
                   <small>
-                    {tecnico.oficio || 'Especialidad no indicada'} · {tecnico.localidad || 'Zona no indicada'}
+                    {tecnico.titular || tecnico.oficio || 'Especialidad no indicada'} · {tecnico.localidad || 'Zona no indicada'}
                   </small>
                   {tecnico.telefono && <small>{tecnico.telefono}</small>}
                 </div>
@@ -280,6 +286,38 @@ export default function PanelAdministrador({ usuario, sessionToken, onVolver, on
                     ? 'Procesando...'
                     : tecnico.aprobado ? 'Revocar' : 'Aprobar'}
                 </button>
+                <details className="admin-professional-details">
+                  <summary>Perfil profesional completo</summary>
+                  <div className="admin-professional-content">
+                    {tecnico.acerca_de && <p>{tecnico.acerca_de}</p>}
+                    <span>
+                      {tecnico.anios_experiencia !== null
+                        ? `${tecnico.anios_experiencia} años de experiencia`
+                        : 'Experiencia no indicada'}
+                      {tecnico.tarifa_base !== null && ` · Desde $${Number(tecnico.tarifa_base).toLocaleString('es-MX')} MXN`}
+                    </span>
+                    {tecnico.disponibilidad && <span>Disponibilidad: {tecnico.disponibilidad}</span>}
+                    {tecnico.habilidades?.length > 0 && (
+                      <div className="profile-skills">
+                        {tecnico.habilidades.map((habilidad) => <span key={habilidad} className="profile-skill">{habilidad}</span>)}
+                      </div>
+                    )}
+                    {tecnico.certificaciones?.length > 0 && (
+                      <span>Certificaciones: {tecnico.certificaciones.join(', ')}</span>
+                    )}
+                    {tecnico.experiencias?.length > 0 && (
+                      <ul className="admin-experience-list">
+                        {tecnico.experiencias.map((experiencia) => (
+                          <li key={experiencia.id}>
+                            <strong>{experiencia.puesto}</strong> · {experiencia.empresa || 'Trabajo independiente'}
+                            <small>{experiencia.fecha_inicio} — {experiencia.actual ? 'Actualidad' : experiencia.fecha_fin || 'Sin fecha de fin'}</small>
+                            {experiencia.descripcion && <span>{experiencia.descripcion}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </details>
               </article>
             ))}
           </div>

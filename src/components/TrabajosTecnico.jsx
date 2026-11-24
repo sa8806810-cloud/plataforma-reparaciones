@@ -15,6 +15,7 @@ import {
   Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import PerfilTrabajador from './PerfilTrabajador';
 
 const ICONOS_CATEGORIA = {
   electricidad: Zap,
@@ -206,7 +207,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
     disponibles: disponiblesFiltrados,
     activos: trabajosActivos,
     historial: trabajosCompletados
-  }[pestana];
+  }[pestana] || [];
 
   return (
     <section className="role-panel">
@@ -229,7 +230,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
         </button>
       </div>
 
-      <div className="technician-filters">
+      {pestana !== 'perfil' && <div className="technician-filters">
         <label>
           <span>Categoría</span>
           <select value={categoriaFiltro} onChange={(event) => setCategoriaFiltro(event.target.value)}>
@@ -248,7 +249,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
             ))}
           </select>
         </label>
-      </div>
+      </div>}
 
       <div className="role-tabs" role="tablist" aria-label="Trabajos del técnico">
         <RoleTab id="disponibles" selected={pestana} setSelected={setPestana} count={disponibles.length}>
@@ -260,13 +261,17 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
         <RoleTab id="historial" selected={pestana} setSelected={setPestana} count={trabajosCompletados.length}>
           Historial completado
         </RoleTab>
+        <RoleTab id="perfil" selected={pestana} setSelected={setPestana}>
+          Mi Perfil Profesional
+        </RoleTab>
       </div>
 
+      {pestana === 'perfil' && <PerfilTrabajador usuario={usuario} editable />}
       {aviso && <p role="status" className="panel-message panel-success">{aviso}</p>}
       {error && <p role="alert" className="panel-message panel-error">{error}</p>}
       {cargando && <p className="panel-message">Cargando trabajos...</p>}
 
-      {!cargando && trabajosVisibles.length === 0 && (
+      {pestana !== 'perfil' && !cargando && trabajosVisibles.length === 0 && (
         <p className="panel-message">
           {pestana === 'disponibles'
             ? 'No hay trabajos disponibles que coincidan con los filtros.'
@@ -276,7 +281,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
         </p>
       )}
 
-      {!cargando && trabajosVisibles.length > 0 && (
+      {pestana !== 'perfil' && !cargando && trabajosVisibles.length > 0 && (
         <div className="technician-jobs">
           {trabajosVisibles.map((trabajo) => (
             <TrabajoCard
@@ -303,7 +308,7 @@ function RoleTab({ id, selected, setSelected, count, children }) {
       className={selected === id ? 'role-tab active' : 'role-tab'}
       onClick={() => setSelected(id)}
     >
-      {children}<span>{count}</span>
+      {children}{count !== undefined && <span>{count}</span>}
     </button>
   );
 }

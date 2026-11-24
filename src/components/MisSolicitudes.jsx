@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -30,7 +31,7 @@ function mostrarFecha(fecha) {
   });
 }
 
-export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud }) {
+export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, onVerPerfilTecnico }) {
   const [solicitudes, setSolicitudes] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [trabajoActivo, setTrabajoActivo] = useState(null);
@@ -197,6 +198,13 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud }) 
                     {solicitud.tecnico_oficio && <small>{solicitud.tecnico_oficio}</small>}
                   </span>
                   <CheckCircle2 size={16} className="assigned-check" />
+                  <button
+                    type="button"
+                    className="assigned-profile-link"
+                    onClick={() => onVerPerfilTecnico?.(solicitud.tecnico_id)}
+                  >
+                    <BriefcaseBusiness size={14} /> Ver perfil
+                  </button>
                 </div>
               )}
               {solicitud.detalles_tecnicos?.folio_solicitud && (
