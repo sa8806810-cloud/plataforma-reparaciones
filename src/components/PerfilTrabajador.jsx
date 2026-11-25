@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { formatSupabaseError } from '../lib/formatSupabaseError';
+import { subirAvatar } from '../lib/avatarStorage';
 
 const HABILIDADES = [
   'Electricidad',
@@ -35,6 +38,30 @@ const EXPERIENCIA_VACIA = {
   fecha_fin: '',
   actual: false,
   descripcion: ''
+};
+
+const DIAS_SEMANA = [
+  ['lunes', 'Lunes'],
+  ['martes', 'Martes'],
+  ['miercoles', 'Miércoles'],
+  ['jueves', 'Jueves'],
+  ['viernes', 'Viernes'],
+  ['sabado', 'Sábado'],
+  ['domingo', 'Domingo']
+];
+
+const AGENDA_INICIAL = Object.fromEntries(DIAS_SEMANA.map(([dia]) => [
+  dia,
+  { activo: !['sabado', 'domingo'].includes(dia), inicio: '08:00', fin: '17:00' }
+]));
+
+const CONFIG_TECNICO_INICIAL = {
+  latitud: null,
+  longitud: null,
+  radio_km: 10,
+  en_linea: false,
+  disponibilidad_semanal: AGENDA_INICIAL,
+  fechas_bloqueadas: []
 };
 
 function mostrarFecha(fecha) {
@@ -73,9 +100,14 @@ export default function PerfilTrabajador({
   const [aviso, setAviso] = useState('');
   const [modoExperiencia, setModoExperiencia] = useState(null);
   const [experienciaForm, setExperienciaForm] = useState(EXPERIENCIA_VACIA);
+  const [configTecnico, setConfigTecnico] = useState(CONFIG_TECNICO_INICIAL);
+  const [fechaBloqueada, setFechaBloqueada] = useState('');
+  const [guardandoCobertura, setGuardandoCobertura] = useState(false);
+  const [subiendoAvatar, setSubiendoAvatar] = useState(false);
+  const mapaRef = useRef(null);
 
   const cargarPerfil = useCallback(async () => {
-    const [perfilResult, experienciaResult] = await Promise.all([
+    const [perfilResult, experienciaResult, configuracionResult] = await Promise.all([
       supabase
         .from('perfiles')
         .select('user_id, rol, nombre, localidad, avatar_url, titular, anios_experiencia, tarifa_base, acerca_de, disponibilidad, habilidades, certificaciones')
@@ -85,20 +117,25 @@ export default function PerfilTrabajador({
         .from('experiencias_trabajador')
         .select('id, puesto, empresa, fecha_inicio, fecha_fin, actual, descripcion')
         .eq('trabajador_id', id)
-        .order('fecha_inicio', { ascending: false })
+        .order('fecha_inicio', { ascending: false }),
+      esCuentaPropia
+        ? supabase.rpc('tecnico_obtener_configuracion')
+        : Promise.resolve({ data: null, error: null })
     ]);
 
     if (perfilResult.error) throw perfilResult.error;
     if (experienciaResult.error) throw experienciaResult.error;
+    if (configuracionResult.error) throw configuracionResult.error;
     if (!perfilResult.data) {
       throw new Error('El perfil no está disponible o el trabajador aún no fue verificado.');
     }
 
     return {
       perfil: perfilResult.data,
-      experiencias: experienciaResult.data || []
+      experiencias: experienciaResult.data || [],
+      configuracion: configuracionResult.data
     };
-  }, [id]);
+  }, [esCuentaPropia, id]);
 
   useEffect(() => {
     let montado = true;
@@ -115,6 +152,17 @@ export default function PerfilTrabajador({
         if (!montado) return;
         setPerfil({ ...resultado.perfil, verificado });
         setExperiencias(resultado.experiencias);
+        if (resultado.configuracion) {
+          setConfigTecnico({
+            ...CONFIG_TECNICO_INICIAL,
+            ...resultado.configuracion,
+            disponibilidad_semanal: {
+              ...AGENDA_INICIAL,
+              ...(resultado.configuracion.disponibilidad_semanal || {})
+            },
+            fechas_bloqueadas: resultado.configuracion.fechas_bloqueadas || []
+          });
+        }
       })
       .catch((loadError) => {
         if (montado) setError(`No se pudo cargar el perfil profesional: ${formatSupabaseError(loadError)}`);
@@ -178,6 +226,122 @@ export default function PerfilTrabajador({
       setGuardando(false);
     }
   };
+
+  const guardarCobertura = async () => {
+    setGuardandoCobertura(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: saveError } = await supabase.rpc('tecnico_guardar_configuracion', {
+        p_latitud: configTecnico.latitud,
+        p_longitud: configTecnico.longitud,
+        p_radio_km: Number(configTecnico.radio_km),
+        p_en_linea: Boolean(configTecnico.en_linea),
+        p_disponibilidad_semanal: configTecnico.disponibilidad_semanal,
+        p_fechas_bloqueadas: configTecnico.fechas_bloqueadas
+      });
+      if (saveError) throw saveError;
+      setAviso('Disponibilidad y cobertura guardadas.');
+    } catch (saveError) {
+      setError(`No se pudo guardar la disponibilidad: ${formatSupabaseError(saveError)}`);
+    } finally {
+      setGuardandoCobertura(false);
+    }
+  };
+
+  const capturarUbicacion = () => {
+    if (!navigator.geolocation) {
+      setError('Este dispositivo no ofrece geolocalización.');
+      return;
+    }
+    setError('');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setConfigTecnico((actual) => ({
+          ...actual,
+          latitud: Number(coords.latitude.toFixed(6)),
+          longitud: Number(coords.longitude.toFixed(6))
+        }));
+      },
+      (locationError) => setError(`No se pudo obtener la ubicación: ${locationError.message}`),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  };
+
+  const subirFoto = async (event) => {
+    const archivo = event.target.files?.[0];
+    event.target.value = '';
+    if (!archivo) return;
+    setSubiendoAvatar(true);
+    setError('');
+    setAviso('');
+    try {
+      const avatarUrl = await subirAvatar(usuario.id, archivo);
+      cambiarCampo('avatar_url', avatarUrl);
+      setAviso('Foto cargada. Guarda el perfil para publicarla.');
+    } catch (uploadError) {
+      setError(`No se pudo subir la foto: ${formatSupabaseError(uploadError)}`);
+    } finally {
+      setSubiendoAvatar(false);
+    }
+  };
+
+  const actualizarDia = (dia, campo, valor) => {
+    setConfigTecnico((actual) => ({
+      ...actual,
+      disponibilidad_semanal: {
+        ...actual.disponibilidad_semanal,
+        [dia]: { ...actual.disponibilidad_semanal[dia], [campo]: valor }
+      }
+    }));
+  };
+
+  const agregarFechaBloqueada = () => {
+    if (!fechaBloqueada || configTecnico.fechas_bloqueadas.includes(fechaBloqueada)) return;
+    setConfigTecnico((actual) => ({
+      ...actual,
+      fechas_bloqueadas: [...actual.fechas_bloqueadas, fechaBloqueada].sort()
+    }));
+    setFechaBloqueada('');
+  };
+
+  useEffect(() => {
+    const elemento = mapaRef.current;
+    if (!elemento) return undefined;
+    const latitud = configTecnico.latitud;
+    const longitud = configTecnico.longitud;
+    const radio = Number(configTecnico.radio_km);
+    const tieneUbicacion = Number.isFinite(Number(latitud)) && Number.isFinite(Number(longitud));
+    const centro = tieneUbicacion ? [Number(latitud), Number(longitud)] : [20.1456, -102.5597];
+    const mapa = L.map(elemento, { scrollWheelZoom: false }).setView(centro, tieneUbicacion ? 12 : 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(mapa);
+    if (tieneUbicacion) {
+      L.circleMarker(centro, { radius: 8, color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 1 })
+        .addTo(mapa)
+        .bindPopup('Tu punto base');
+      L.circle(centro, {
+        radius: radio * 1000,
+        color: '#2563eb',
+        fillColor: '#60a5fa',
+        fillOpacity: 0.12
+      }).addTo(mapa);
+    }
+    mapa.on('click', (evento) => {
+      setConfigTecnico((actual) => ({
+        ...actual,
+        latitud: Number(evento.latlng.lat.toFixed(6)),
+        longitud: Number(evento.latlng.lng.toFixed(6))
+      }));
+    });
+    const resize = window.setTimeout(() => mapa.invalidateSize(), 0);
+    return () => {
+      window.clearTimeout(resize);
+      mapa.remove();
+    };
+  }, [configTecnico.latitud, configTecnico.longitud, configTecnico.radio_km]);
 
   const alternarHabilidad = (habilidad) => {
     const actuales = perfil?.habilidades || [];
@@ -353,6 +517,11 @@ export default function PerfilTrabajador({
                     <span>Enlace a foto o avatar (HTTPS)</span>
                     <input type="url" placeholder="https://..." value={perfil.avatar_url || ''} onChange={(event) => cambiarCampo('avatar_url', event.target.value)} />
                   </label>
+                  <label>
+                    <span>Subir foto de perfil (JPG, PNG o WebP · máximo 2 MB)</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" disabled={subiendoAvatar} onChange={subirFoto} />
+                    {subiendoAvatar && <small>Subiendo foto...</small>}
+                  </label>
                   <label className="profile-field-wide">
                     <span>Acerca de mí</span>
                     <textarea rows="4" maxLength={2000} value={perfil.acerca_de || ''} placeholder="Resume tu experiencia, enfoque y tipo de servicios." onChange={(event) => cambiarCampo('acerca_de', event.target.value)} />
@@ -361,6 +530,71 @@ export default function PerfilTrabajador({
                     <span>Disponibilidad horaria</span>
                     <textarea rows="2" maxLength={500} value={perfil.disponibilidad || ''} placeholder="Ej. Lunes a sábado, 8:00 a 18:00" onChange={(event) => cambiarCampo('disponibilidad', event.target.value)} />
                   </label>
+                </div>
+              </section>
+
+              <section className="profile-section">
+                <div className="profile-section-heading">
+                  <div><span className="section-eyebrow">Disponibilidad</span><h3>Agenda y zona de cobertura</h3></div>
+                  <label className="availability-online-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(configTecnico.en_linea)}
+                      disabled={!perfil.verificado}
+                      onChange={(event) => setConfigTecnico((actual) => ({ ...actual, en_linea: event.target.checked }))}
+                    />
+                    <span>{configTecnico.en_linea ? 'En línea' : 'Desconectado'}</span>
+                  </label>
+                </div>
+                {!perfil.verificado && <p className="field-note">Tu cuenta debe estar verificada para aparecer como disponible.</p>}
+                <div className="coverage-map" ref={mapaRef} aria-label="Mapa interactivo de cobertura. Haz clic para elegir tu punto base." />
+                <p className="field-note">Haz clic en el mapa para marcar tu punto base. El GPS exacto solo se usa para calcular cercanía; no se muestra en el directorio.</p>
+                <div className="profile-form-grid">
+                  <label>
+                    <span>Latitud</span>
+                    <input type="number" step="any" min="-90" max="90" value={configTecnico.latitud ?? ''} onChange={(event) => setConfigTecnico((actual) => ({ ...actual, latitud: event.target.value === '' ? null : Number(event.target.value) }))} />
+                  </label>
+                  <label>
+                    <span>Longitud</span>
+                    <input type="number" step="any" min="-180" max="180" value={configTecnico.longitud ?? ''} onChange={(event) => setConfigTecnico((actual) => ({ ...actual, longitud: event.target.value === '' ? null : Number(event.target.value) }))} />
+                  </label>
+                  <label>
+                    <span>Radio de cobertura</span>
+                    <select value={configTecnico.radio_km} onChange={(event) => setConfigTecnico((actual) => ({ ...actual, radio_km: Number(event.target.value) }))}>
+                      {[5, 10, 25, 50, 100].map((radio) => <option value={radio} key={radio}>{radio} km</option>)}
+                    </select>
+                  </label>
+                  <div className="coverage-map-actions">
+                    <button type="button" className="panel-action-button" onClick={capturarUbicacion}><MapPin size={15} />Usar mi GPS</button>
+                    <button type="button" className="panel-action-button panel-primary-action" disabled={guardandoCobertura} onClick={guardarCobertura}>
+                      <Save size={15} />{guardandoCobertura ? 'Guardando...' : 'Guardar cobertura'}
+                    </button>
+                  </div>
+                </div>
+                <div className="weekly-schedule">
+                  {DIAS_SEMANA.map(([dia, etiqueta]) => {
+                    const horario = configTecnico.disponibilidad_semanal[dia] || { activo: false, inicio: '08:00', fin: '17:00' };
+                    return (
+                      <div className="weekly-schedule-row" key={dia}>
+                        <label><input type="checkbox" checked={Boolean(horario.activo)} onChange={(event) => actualizarDia(dia, 'activo', event.target.checked)} /><span>{etiqueta}</span></label>
+                        <input aria-label={`${etiqueta}: hora de inicio`} type="time" disabled={!horario.activo} value={horario.inicio || '08:00'} onChange={(event) => actualizarDia(dia, 'inicio', event.target.value)} />
+                        <span>a</span>
+                        <input aria-label={`${etiqueta}: hora de fin`} type="time" disabled={!horario.activo} value={horario.fin || '17:00'} onChange={(event) => actualizarDia(dia, 'fin', event.target.value)} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="blocked-dates">
+                  <label><span>Días libres puntuales</span><input type="date" min={new Date().toISOString().slice(0, 10)} value={fechaBloqueada} onChange={(event) => setFechaBloqueada(event.target.value)} /></label>
+                  <button type="button" className="panel-action-button" disabled={!fechaBloqueada} onClick={agregarFechaBloqueada}>Agregar día libre</button>
+                  {configTecnico.fechas_bloqueadas.map((fecha) => (
+                    <button type="button" className="blocked-date-chip" key={fecha} onClick={() => setConfigTecnico((actual) => ({
+                      ...actual,
+                      fechas_bloqueadas: actual.fechas_bloqueadas.filter((item) => item !== fecha)
+                    }))}>
+                      {fecha} ×
+                    </button>
+                  ))}
                 </div>
               </section>
 

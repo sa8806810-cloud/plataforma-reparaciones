@@ -104,7 +104,9 @@ export default function SolicitarReparacion({ usuario, initialSelection, onVolve
     ? initialSelection.categoria
     : categoriasKeys[0];
   const fechaHoyISO = useMemo(() => obtenerHoyISO(), []);
-  const fechaInicialObj = useMemo(() => new Date(), []);
+  const fechaInicialObj = initialSelection?.fecha
+    ? new Date(`${initialSelection.fecha}T12:00:00`)
+    : new Date();
 
   const [categoria, setCategoria] = useState(categoriaInicial);
   const subtiposKeys = Object.keys(CATEGORIAS_REPARACION[categoria].subtipos);
@@ -114,13 +116,19 @@ export default function SolicitarReparacion({ usuario, initialSelection, onVolve
   const [subtipo, setSubtipo] = useState(subtipoInicial);
   const [urgencia, setUrgencia] = useState('normal');
   const [presupuesto, setPresupuesto] = useState(OPCIONES_PRESUPUESTO[0]);
-  const [fechaElegida, setFechaElegida] = useState(fechaHoyISO);
+  const [fechaElegida, setFechaElegida] = useState(
+    /^\d{4}-\d{2}-\d{2}$/.test(initialSelection?.fecha || '') ? initialSelection.fecha : fechaHoyISO
+  );
   const [mesVista, setMesVista] = useState({
     anio: fechaInicialObj.getFullYear(),
     mes: fechaInicialObj.getMonth()
   });
 
-  const [localidad, setLocalidad] = useState(LOCALIDADES_REGION[0]);
+  const [localidad, setLocalidad] = useState(
+    LOCALIDADES_REGION.includes(initialSelection?.localidad)
+      ? initialSelection.localidad
+      : LOCALIDADES_REGION[0]
+  );
   const [nombreContacto, setNombreContacto] = useState(usuario?.user_metadata?.nombre || '');
   const [telefonoContacto, setTelefonoContacto] = useState(usuario?.user_metadata?.telefono || '');
   const [direccion, setDireccion] = useState('');
@@ -300,6 +308,11 @@ export default function SolicitarReparacion({ usuario, initialSelection, onVolve
       urgencia,
       presupuesto_estimado: presupuesto,
       fecha_solicitada: fechaElegida,
+      fecha_agendada: initialSelection?.fecha && initialSelection?.hora
+        ? `${initialSelection.fecha}T${initialSelection.hora}`
+        : null,
+      tecnico_preferido_id: initialSelection?.tecnicoId || null,
+      tecnico_preferido_nombre: initialSelection?.tecnicoNombre || null,
       ubicacion_gps: ubicacionGPS,
       folio_solicitud: folio
     };
@@ -481,10 +494,16 @@ export default function SolicitarReparacion({ usuario, initialSelection, onVolve
             Tu referencia es <strong>{solicitudEnviada.folio}</strong>. Un técnico aprobado de tu
             zona podrá revisar el servicio y aceptarlo.
           </p>
+          {solicitudEnviada.detalles_tecnicos?.tecnico_preferido_nombre && (
+            <p><strong>Técnico solicitado:</strong> {solicitudEnviada.detalles_tecnicos.tecnico_preferido_nombre} (sujeto a aceptación)</p>
+          )}
           <p><strong>Servicio:</strong> {solicitudEnviada.titulo}</p>
           <p><strong>Contacto:</strong> {solicitudEnviada.nombre_contacto} · {solicitudEnviada.telefono_contacto}</p>
           <p><strong>Ubicación:</strong> {solicitudEnviada.direccion}, {solicitudEnviada.localidad}</p>
           <p><strong>Fecha:</strong> {formatearFechaLarga(solicitudEnviada.fecha)} · {etiquetaUrgenciaActual}</p>
+          {solicitudEnviada.detalles_tecnicos?.fecha_agendada && (
+            <p><strong>Hora solicitada:</strong> {solicitudEnviada.detalles_tecnicos.fecha_agendada.split('T')[1]}</p>
+          )}
           <p><strong>Presupuesto estimado:</strong> {solicitudEnviada.presupuesto}</p>
           <p><strong>Detalles:</strong> {solicitudEnviada.descripcion}</p>
           {mensajeCopia && <p role="status">{mensajeCopia}</p>}

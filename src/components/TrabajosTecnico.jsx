@@ -64,7 +64,7 @@ function mostrarEstado(estado) {
   return etiquetas[estado] || estado;
 }
 
-export default function TrabajosTecnico({ usuario, onVolver }) {
+export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) {
   const [disponibles, setDisponibles] = useState([]);
   const [asignados, setAsignados] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -73,11 +73,15 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
   const [error, setError] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
   const [urgenciaFiltro, setUrgenciaFiltro] = useState('todas');
-  const [pestana, setPestana] = useState('disponibles');
+  const [distanciaFiltro, setDistanciaFiltro] = useState('todas');
+  const [pestana, setPestana] = useState(aprobado ? 'disponibles' : 'perfil');
 
   const obtenerTrabajos = useCallback(async () => {
+    if (!aprobado) {
+      return { disponibles: [], asignados: [] };
+    }
     const [disponiblesResult, asignadosResult] = await Promise.all([
-      supabase.rpc('listar_trabajos_disponibles'),
+      supabase.rpc('listar_trabajos_disponibles_cercanos'),
       supabase
         .from('trabajos')
         .select('*')
@@ -97,7 +101,7 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
       disponibles: disponiblesResult.data || [],
       asignados: asignadosResult.data || []
     };
-  }, [usuario.id]);
+  }, [aprobado, usuario.id]);
 
   const aplicarTrabajos = useCallback((resultado) => {
     setDisponibles(resultado.disponibles);
@@ -188,8 +192,10 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
   const filtrar = useCallback((trabajo) => {
     const urgencia = trabajo.detalles_tecnicos?.urgencia || 'normal';
     return (categoriaFiltro === 'todas' || trabajo.categoria === categoriaFiltro) &&
-      (urgenciaFiltro === 'todas' || urgencia === urgenciaFiltro);
-  }, [categoriaFiltro, urgenciaFiltro]);
+      (urgenciaFiltro === 'todas' || urgencia === urgenciaFiltro) &&
+      (distanciaFiltro === 'todas' || trabajo.distancia_km === null ||
+        trabajo.distancia_km === undefined || Number(trabajo.distancia_km) <= Number(distanciaFiltro));
+  }, [categoriaFiltro, distanciaFiltro, urgenciaFiltro]);
 
   const trabajosActivos = useMemo(
     () => asignados.filter((trabajo) => ESTADOS_ACTIVOS.includes(trabajo.estado)).filter(filtrar),
@@ -230,6 +236,12 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
         </button>
       </div>
 
+      {!aprobado && (
+        <p role="status" className="panel-message">
+          Tu cuenta está en revisión. Completa tu perfil profesional; al aprobarse podrás consultar y aceptar trabajos.
+        </p>
+      )}
+
       {pestana !== 'perfil' && <div className="technician-filters">
         <label>
           <span>Categoría</span>
@@ -249,16 +261,28 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
             ))}
           </select>
         </label>
+        {pestana === 'disponibles' && (
+          <label>
+            <span>Distancia máxima</span>
+            <select value={distanciaFiltro} onChange={(event) => setDistanciaFiltro(event.target.value)}>
+              <option value="todas">Todas las distancias</option>
+              <option value="5">5 km</option>
+              <option value="10">10 km</option>
+              <option value="25">25 km</option>
+              <option value="50">50 km</option>
+            </select>
+          </label>
+        )}
       </div>}
 
       <div className="role-tabs" role="tablist" aria-label="Trabajos del técnico">
-        <RoleTab id="disponibles" selected={pestana} setSelected={setPestana} count={disponibles.length}>
+        <RoleTab id="disponibles" selected={pestana} setSelected={setPestana} count={disponibles.length} disabled={!aprobado}>
           Trabajos disponibles
         </RoleTab>
-        <RoleTab id="activos" selected={pestana} setSelected={setPestana} count={trabajosActivos.length}>
+        <RoleTab id="activos" selected={pestana} setSelected={setPestana} count={trabajosActivos.length} disabled={!aprobado}>
           Mis trabajos activos
         </RoleTab>
-        <RoleTab id="historial" selected={pestana} setSelected={setPestana} count={trabajosCompletados.length}>
+        <RoleTab id="historial" selected={pestana} setSelected={setPestana} count={trabajosCompletados.length} disabled={!aprobado}>
           Historial completado
         </RoleTab>
         <RoleTab id="perfil" selected={pestana} setSelected={setPestana}>
@@ -299,12 +323,13 @@ export default function TrabajosTecnico({ usuario, onVolver }) {
   );
 }
 
-function RoleTab({ id, selected, setSelected, count, children }) {
+function RoleTab({ id, selected, setSelected, count, children, disabled = false }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={selected === id}
+      disabled={disabled}
       className={selected === id ? 'role-tab active' : 'role-tab'}
       onClick={() => setSelected(id)}
     >
@@ -342,6 +367,10 @@ function TrabajoCard({ trabajo, disponible, trabajoActivo, onAceptar, onActualiz
       <span className="job-meta">
         <MapPin size={15} /> {disponible ? trabajo.localidad : `${trabajo.direccion}, ${trabajo.localidad}`}
       </span>
+      {disponible && trabajo.distancia_km !== null && trabajo.distancia_km !== undefined &&
+        Number.isFinite(Number(trabajo.distancia_km)) && (
+        <span className="job-meta">{Number(trabajo.distancia_km).toLocaleString('es-MX')} km de tu punto base</span>
+      )}
       <span className="job-meta">
         <Clock3 size={15} /> {mostrarFecha(trabajo.creado_en)}
       </span>

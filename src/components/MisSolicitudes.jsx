@@ -13,6 +13,8 @@ import {
   XCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import AgendaTecnicos from './AgendaTecnicos';
+import PerfilCliente from './PerfilCliente';
 
 const ETIQUETAS_ESTADO = {
   solicitado: 'Pendiente',
@@ -31,13 +33,14 @@ function mostrarFecha(fecha) {
   });
 }
 
-export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, onVerPerfilTecnico }) {
+export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, onVerPerfilTecnico, onSolicitarConTecnico }) {
   const [solicitudes, setSolicitudes] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [trabajoActivo, setTrabajoActivo] = useState(null);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [estadoRealtime, setEstadoRealtime] = useState('');
+  const [pestana, setPestana] = useState('solicitudes');
 
   const obtenerSolicitudes = useCallback(async () => {
     const { data, error: queryError } = await supabase.rpc('listar_mis_trabajos');
@@ -159,10 +162,18 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, on
         </span>
       </div>
 
+      <div className="role-tabs" role="tablist" aria-label="Secciones de cliente">
+        <RoleTab id="solicitudes" selected={pestana} setSelected={setPestana}><ClipboardList size={15} />Mis solicitudes</RoleTab>
+        <RoleTab id="agenda" selected={pestana} setSelected={setPestana}><CalendarDays size={15} />Agendar / ver técnicos</RoleTab>
+        <RoleTab id="perfil" selected={pestana} setSelected={setPestana}><UserRound size={15} />Mi perfil</RoleTab>
+      </div>
+
       {error && <p role="alert" className="panel-message panel-error">{error}</p>}
       {aviso && <p role="status" className="panel-message panel-success">{aviso}</p>}
-      {cargando && <p className="panel-message">Cargando tus solicitudes...</p>}
-      {!cargando && !error && solicitudes.length === 0 && (
+      {pestana === 'agenda' && <AgendaTecnicos onSolicitar={onSolicitarConTecnico} />}
+      {pestana === 'perfil' && <PerfilCliente usuario={usuario} />}
+      {pestana === 'solicitudes' && cargando && <p className="panel-message">Cargando tus solicitudes...</p>}
+      {pestana === 'solicitudes' && !cargando && !error && solicitudes.length === 0 && (
         <div className="empty-role-state">
           <ClipboardList size={28} aria-hidden="true" />
           <h3>Aún no tienes solicitudes</h3>
@@ -172,7 +183,7 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, on
           </button>
         </div>
       )}
-      {!cargando && solicitudes.length > 0 && (
+      {pestana === 'solicitudes' && !cargando && solicitudes.length > 0 && (
         <div className="technician-jobs">
           {solicitudes.map((solicitud) => (
             <article key={solicitud.id} className="technician-job-card">
@@ -212,6 +223,13 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, on
                   <Clock3 size={15} /> Folio {solicitud.detalles_tecnicos.folio_solicitud}
                 </span>
               )}
+              {solicitud.detalles_tecnicos?.tecnico_preferido_nombre && !solicitud.tecnico_id && (
+                <span className="job-meta">Preferencia: {solicitud.detalles_tecnicos.tecnico_preferido_nombre}</span>
+              )}
+              {solicitud.detalles_tecnicos?.fecha_agendada && (
+                <span className="job-meta"><CalendarDays size={15} />Horario solicitado: {solicitud.detalles_tecnicos.fecha_agendada.replace('T', ' · ')}</span>
+              )}
+              <EstadoTimeline estado={solicitud.estado} />
               {solicitud.estado === 'solicitado' && !solicitud.tecnico_id && (
                 <button
                   type="button"
@@ -228,5 +246,42 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, on
         </div>
       )}
     </section>
+  );
+}
+
+function RoleTab({ id, selected, setSelected, children }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected === id}
+      className={selected === id ? 'role-tab active' : 'role-tab'}
+      onClick={() => setSelected(id)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EstadoTimeline({ estado }) {
+  if (estado === 'cancelado') {
+    return <p className="request-cancelled-state"><XCircle size={15} />Solicitud cancelada</p>;
+  }
+  const pasos = [
+    ['solicitado', 'Enviada'],
+    ['aceptado', 'Técnico asignado'],
+    ['en_camino', 'En camino'],
+    ['en_proceso', 'En proceso'],
+    ['completado', 'Completada']
+  ];
+  const indice = pasos.findIndex(([clave]) => clave === estado);
+  return (
+    <ol className="request-status-timeline" aria-label={`Estado de solicitud: ${ETIQUETAS_ESTADO[estado] || estado}`}>
+      {pasos.map(([clave, etiqueta], posicion) => (
+        <li key={clave} className={posicion <= indice ? 'complete' : ''}>
+          <span>{posicion + 1}</span><small>{etiqueta}</small>
+        </li>
+      ))}
+    </ol>
   );
 }

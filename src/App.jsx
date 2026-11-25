@@ -35,6 +35,7 @@ const AuthPortal = lazy(() => import('./components/AuthPortal'));
 const TrabajosTecnico = lazy(() => import('./components/TrabajosTecnico'));
 const MisSolicitudes = lazy(() => import('./components/MisSolicitudes'));
 const PanelAdministrador = lazy(() => import('./components/AdminControlCenter'));
+const PanelModerador = lazy(() => import('./components/ModeratorPanel'));
 const DirectorioTecnicos = lazy(() => import('./components/DirectorioTecnicos'));
 const PerfilTrabajador = lazy(() => import('./components/PerfilTrabajador'));
 const SupportChat = lazy(() => import('./components/SupportChat'));
@@ -151,6 +152,12 @@ export default function App() {
     token: null,
     error: ''
   });
+  const [moderatorAccess, setModeratorAccess] = useState({
+    usuarioId: null,
+    permisos: null,
+    checking: false,
+    error: ''
+  });
   const cerrandoPorConflicto = useRef(false);
   const inicioAdminEnCurso = useRef({ usuarioId: null, promesa: null });
   const destinoNavegacion = useRef(null);
@@ -184,6 +191,7 @@ export default function App() {
   const usuarioId = usuario?.id || null;
   const rolUsuario = perfilUsuario.usuarioId === usuarioId ? perfilUsuario.rol : '';
   const tecnicoSolicitante = rolUsuario === 'tecnico';
+  const esModerador = rolUsuario === 'moderador';
 
   useEffect(() => {
     if (!usuarioId) return undefined;
@@ -315,6 +323,30 @@ export default function App() {
       montado = false;
     };
   }, [usuarioId, tecnicoSolicitante]);
+
+  useEffect(() => {
+    if (!usuarioId || !esModerador) {
+      setModeratorAccess({ usuarioId: null, permisos: null, checking: false, error: '' });
+      return undefined;
+    }
+
+    let montado = true;
+    setModeratorAccess({ usuarioId, permisos: null, checking: true, error: '' });
+    supabase.rpc('moderador_mis_permisos')
+      .then(({ data, error }) => {
+        if (!montado) return;
+        if (error) throw error;
+        setModeratorAccess({ usuarioId, permisos: data, checking: false, error: '' });
+        setVista('moderador');
+      })
+      .catch((error) => {
+        if (montado) {
+          setModeratorAccess({ usuarioId, permisos: null, checking: false, error: error.message });
+        }
+      });
+
+    return () => { montado = false; };
+  }, [esModerador, usuarioId]);
 
   useEffect(() => {
     if (!usuarioId) {
@@ -526,16 +558,35 @@ export default function App() {
       setVista('auth');
       return;
     }
-    setSeleccionServicio(
-      servicio ? { categoria: servicio.categoria, subtipo: servicio.subtipo } : null
-    );
+    setSeleccionServicio(servicio ? { ...servicio } : null);
     setMenuMovilAbierto(false);
     setVista('solicitar');
   };
 
+  const solicitarConTecnico = (tecnico, fecha, hora, localidad) => {
+    const categoriaPorEspecialidad = {
+      Electricidad: 'electricidad',
+      Plomería: 'plomeria',
+      Cerrajería: 'cerrajeria',
+      Electrodomésticos: 'electrodomesticos',
+      Instalación: 'electricidad',
+      Reparaciones: 'reparaciones',
+      Mantenimiento: 'reparaciones'
+    };
+    const especialidad = (tecnico.habilidades || []).find((item) => categoriaPorEspecialidad[item]);
+    solicitarServicio({
+      categoria: categoriaPorEspecialidad[especialidad] || 'reparaciones',
+      fecha,
+      hora,
+      localidad,
+      tecnicoId: tecnico.user_id,
+      tecnicoNombre: tecnico.nombre
+    });
+  };
+
   return (
     <div
-      className={`app-shell${vista === 'inicio' ? ' landing-theme' : ''}${vista === 'solicitar' ? ' request-theme' : ''}${vista === 'admin' ? ' admin-shell' : ''}`}
+      className={`app-shell${vista === 'inicio' ? ' landing-theme' : ''}${vista === 'solicitar' ? ' request-theme' : ''}${vista === 'admin' ? ' admin-shell' : ''}${vista === 'moderador' ? ' moderator-shell' : ''}`}
       style={{
         '--brand-primary': configuracionSitio.primaryColor,
         minHeight: '100vh',
@@ -544,11 +595,11 @@ export default function App() {
           : 'radial-gradient(circle at 50% -10%, #17284a 0%, #0b1120 48%, #060911 100%)',
         color: vista === 'inicio' ? '#0f172a' : '#f8fafc',
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        padding: vista === 'admin' ? '0' : 'clamp(12px, 3vw, 24px) clamp(12px, 3vw, 18px) 40px clamp(12px, 3vw, 18px)',
+        padding: ['admin', 'moderador'].includes(vista) ? '0' : 'clamp(12px, 3vw, 24px) clamp(12px, 3vw, 18px) 40px clamp(12px, 3vw, 18px)',
         boxSizing: 'border-box'
       }}
     >
-      {vista !== 'admin' && <header className="app-navbar">
+      {!['admin', 'moderador'].includes(vista) && <header className="app-navbar">
         {configuracionSitio.bannerEnabled && configuracionSitio.bannerText && (
           <div className="site-promo-banner"><Sparkles size={15} />{configuracionSitio.bannerText}</div>
         )}
@@ -580,6 +631,8 @@ export default function App() {
                   {nombreUsuario}
                   {esAdminActivo
                     ? ' · Administrador'
+                    : esModerador
+                      ? ' · Moderador'
                     : cuentaRestringida
                       ? ` · Cuenta ${perfilUsuario.estadoCuenta}`
                       : tecnicoAprobado
@@ -592,11 +645,13 @@ export default function App() {
                 </span>
                 {adminAccess.checking || perfilUsuario.usuarioId !== usuarioId ? (
                   <span className="nav-user-label">Verificando cuenta…</span>
+                ) : esModerador && moderatorAccess.checking ? (
+                  <span className="nav-user-label">Verificando permisos…</span>
                 ) : (
                   <button
                     type="button"
                     className="panel-nav-button"
-                    onClick={() => setVista(cuentaRestringida ? 'cuenta-bloqueada' : esAdminActivo ? 'admin' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
+                    onClick={() => setVista(cuentaRestringida ? 'cuenta-bloqueada' : esAdminActivo ? 'admin' : esModerador ? 'moderador' : rolUsuario === 'tecnico' ? 'tecnico' : 'cliente')}
                   >
                     <LayoutDashboard size={15} />Mi Panel
                   </button>
@@ -884,7 +939,7 @@ export default function App() {
         {!cuentaRestringida && vista === 'solicitar' && (
           <Suspense fallback={<p className="panel-message">Preparando solicitud...</p>}>
             <SolicitarReparacion
-              key={`${seleccionServicio?.categoria || 'inicio'}:${seleccionServicio?.subtipo || 'default'}`}
+              key={`${seleccionServicio?.categoria || 'inicio'}:${seleccionServicio?.subtipo || 'default'}:${seleccionServicio?.fecha || ''}:${seleccionServicio?.hora || ''}:${seleccionServicio?.tecnicoId || ''}`}
               usuario={usuario}
               initialSelection={seleccionServicio}
               onVolver={() => setVista('inicio')}
@@ -927,9 +982,9 @@ export default function App() {
           </Suspense>
         )}
 
-        {!cuentaRestringida && vista === 'tecnico' && tecnicoAprobado && (
+        {!cuentaRestringida && vista === 'tecnico' && rolUsuario === 'tecnico' && (
           <Suspense fallback={<p className="panel-message">Cargando panel técnico...</p>}>
-            <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} />
+            <TrabajosTecnico usuario={usuario} onVolver={() => setVista('inicio')} aprobado={tecnicoAprobado} />
           </Suspense>
         )}
 
@@ -939,12 +994,29 @@ export default function App() {
               usuario={usuario}
               onVolver={() => setVista('inicio')}
               onNuevaSolicitud={() => solicitarServicio()}
+              onSolicitarConTecnico={solicitarConTecnico}
               onVerPerfilTecnico={(id) => {
                 setPerfilTecnicoId(id);
                 setVista('perfil-tecnico');
               }}
             />
           </Suspense>
+        )}
+
+        {!cuentaRestringida && vista === 'moderador' && usuario && esModerador && moderatorAccess.usuarioId === usuarioId && moderatorAccess.permisos && (
+          <Suspense fallback={<p className="panel-message">Cargando centro de moderación...</p>}>
+            <PanelModerador
+              usuario={usuario}
+              permisos={moderatorAccess.permisos}
+              onCerrarSesion={handleCerrarSesion}
+            />
+          </Suspense>
+        )}
+
+        {!cuentaRestringida && vista === 'moderador' && moderatorAccess.error && (
+          <section className="panel-message panel-error" role="alert">
+            No se pudo validar el acceso de moderación: {moderatorAccess.error}
+          </section>
         )}
 
         {!cuentaRestringida && vista === 'admin' && esAdminActivo && (
@@ -977,20 +1049,6 @@ export default function App() {
           </section>
         )}
 
-        {!cuentaRestringida && vista === 'tecnico' && rolUsuario === 'tecnico' && !tecnicoAprobado && (
-          <section
-            role="status"
-            className="pending-technician"
-          >
-            {estadoAprobacion.error
-              ? 'No se pudo consultar la aprobación. Intenta actualizar la página o contacta al administrador.'
-              : <>
-                  <ShieldCheck size={28} />
-                  <h2>Cuenta en revisión</h2>
-                  <p>El administrador revisará tu perfil. Te avisaremos cuando puedas recibir trabajos.</p>
-                </>}
-          </section>
-        )}
       </main>
 
       {usuario && ['cliente', 'tecnico'].includes(rolUsuario) && (

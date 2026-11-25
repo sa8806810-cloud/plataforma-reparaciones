@@ -26,6 +26,7 @@ import {
   Table2,
   UserRound,
   Users,
+  UserCog,
   Wrench,
   X,
   XCircle
@@ -55,6 +56,7 @@ const MODULOS = [
   { grupo: 'Operación', id: 'solicitudes', etiqueta: 'Solicitudes', icono: Wrench },
   { grupo: 'Operación', id: 'zonas', etiqueta: 'Mapa, zonas y categorías', icono: MapPinned },
   { grupo: 'Comunidad', id: 'usuarios', etiqueta: 'Usuarios y técnicos', icono: Users },
+  { grupo: 'Comunidad', id: 'moderadores', etiqueta: 'Moderadores', icono: UserCog },
   { grupo: 'Comunidad', id: 'soporte', etiqueta: 'Mensajería y soporte', icono: MessageCircle },
   { grupo: 'Plataforma', id: 'cms', etiqueta: 'Presentación web', icono: Paintbrush },
   { grupo: 'Plataforma', id: 'reglas', etiqueta: 'Configuración y reglas', icono: Settings },
@@ -278,11 +280,15 @@ export default function AdminControlCenter({
               onAccion={ejecutarModeracion}
               usuarioInicial={usuarioParaFicha}
               onUsuarioInicialProcesado={setUsuarioParaFicha}
+              onActualizado={() => cargarDatos(false)}
               onEnviarMensaje={(objetivo) => {
                 setUsuarioParaChat(objetivo);
                 seleccionarModulo('soporte');
               }}
             />
+          )}
+          {moduloActivo === 'moderadores' && (
+            <ModeratorsModule sessionToken={sessionToken} />
           )}
           {moduloActivo === 'soporte' && (
             <SupportInbox
@@ -727,6 +733,7 @@ function UsersModule({
   onAccion,
   usuarioInicial,
   onUsuarioInicialProcesado,
+  onActualizado,
   onEnviarMensaje
 }) {
   const [busqueda, setBusqueda] = useState('');
@@ -736,8 +743,10 @@ function UsersModule({
   const [detalle, setDetalle] = useState(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const [accionUsuario, setAccionUsuario] = useState(null);
   const [procesando, setProcesando] = useState(false);
+  const [editorAbierto, setEditorAbierto] = useState(false);
 
   const filtrados = useMemo(() => usuarios.filter((item) => {
     const coincideTexto = [item.nombre, item.correo, item.telefono, item.localidad, item.titular, ...(item.habilidades || []), item.user_id]
@@ -795,9 +804,37 @@ function UsersModule({
     }
   };
 
+  const guardarEdicionUsuario = async (cambios) => {
+    if (!detalle?.perfil) return;
+    setProcesando(true);
+    setError('');
+    try {
+      const { error: updateError } = await supabase.rpc('admin_control_editar_usuario', {
+        p_session_token: sessionToken,
+        p_user_id: detalle.perfil.user_id,
+        p_nombre: cambios.nombre,
+        p_telefono: cambios.telefono,
+        p_localidad: cambios.localidad,
+        p_titular: cambios.titular,
+        p_rol: cambios.rol,
+        p_restablecer_avatar: cambios.restablecerAvatar
+      });
+      if (updateError) throw updateError;
+      setEditorAbierto(false);
+      setAviso('Datos del usuario actualizados y cambio registrado en auditoría.');
+      await onActualizado?.();
+      await abrirDetalle(seleccionado);
+    } catch (saveError) {
+      setError(`No se pudo editar el usuario: ${saveError.message}`);
+    } finally {
+      setProcesando(false);
+    }
+  };
+
   return (
     <div className="admin-module-content">
       <div className="admin-module-intro"><div><span className="section-eyebrow">Directorio y confianza</span><h2>Gestión de usuarios</h2><p>Perfiles, experiencia, historial y moderación desde un solo lugar.</p></div><span className="admin-result-count">{filtrados.length} usuarios</span></div>
+    {aviso && <p role="status" className="panel-message panel-success">{aviso}</p>}
       <div className="admin-user-tabs" role="tablist" aria-label="Filtrar usuarios">
         {[
           ['todos', 'Todos'],
@@ -818,9 +855,9 @@ function UsersModule({
         {filtrados.map((item) => (
           <article key={item.user_id} className="admin-user-row">
             <span className="admin-user-avatar">{(item.nombre || 'FN').split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()}</span>
-            <div className="admin-user-main"><strong>{item.nombre || 'Sin nombre'}</strong><span>{item.correo} · {item.telefono || 'Sin teléfono'}</span><small>{item.rol === 'tecnico' ? item.titular || 'Técnico' : 'Cliente'} · {item.localidad || 'Zona no indicada'} · {item.trabajos_total} trabajos</small></div>
+            <div className="admin-user-main"><strong>{item.nombre || 'Sin nombre'}</strong><span>{item.correo} · {item.telefono || 'Sin teléfono'}</span><small>{item.rol === 'tecnico' ? item.titular || 'Técnico' : item.rol === 'moderador' ? 'Moderador' : 'Cliente'} · {item.localidad || 'Zona no indicada'} · {item.trabajos_total} trabajos</small></div>
             <div className="admin-user-badges">
-              <span className={`job-badge ${item.rol === 'tecnico' ? item.verificado ? 'job-badge-normal' : 'job-badge-urgent' : ''}`}>{item.rol === 'tecnico' ? item.verificado ? 'Verificado' : 'Pendiente' : 'Cliente'}</span>
+              <span className={`job-badge ${item.rol === 'tecnico' ? item.verificado ? 'job-badge-normal' : 'job-badge-urgent' : ''}`}>{item.rol === 'tecnico' ? item.verificado ? 'Verificado' : 'Pendiente' : item.rol === 'moderador' ? 'Moderador' : 'Cliente'}</span>
               {item.estado_cuenta !== 'activo' && <span className={`job-badge ${item.estado_cuenta === 'baneado' ? 'job-badge-urgent' : 'job-status-badge'}`}>{item.estado_cuenta === 'baneado' ? 'Baneado' : 'Suspendido'}</span>}
             </div>
             <button type="button" className="panel-action-button" onClick={() => abrirDetalle(item)}>Abrir ficha</button>
@@ -841,7 +878,17 @@ function UsersModule({
           error={error}
           onClose={() => { setSeleccionado(null); setDetalle(null); setError(''); }}
           onModerate={() => setAccionUsuario(seleccionado)}
+          onEdit={() => setEditorAbierto(true)}
           onEnviarMensaje={() => onEnviarMensaje?.(seleccionado)}
+        />
+      )}
+      {editorAbierto && detalle?.perfil && (
+        <EditUserModal
+          perfil={detalle.perfil}
+          procesando={procesando}
+          error={error}
+          onClose={() => { setEditorAbierto(false); setError(''); }}
+          onSave={guardarEdicionUsuario}
         />
       )}
       {accionUsuario && (
@@ -857,7 +904,7 @@ function UsersModule({
   );
 }
 
-function UserDetailModal({ user, detalle, cargando, error, onClose, onModerate, onEnviarMensaje }) {
+function UserDetailModal({ user, detalle, cargando, error, onClose, onModerate, onEdit, onEnviarMensaje }) {
   const perfil = detalle?.perfil;
   return (
     <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -878,11 +925,51 @@ function UserDetailModal({ user, detalle, cargando, error, onClose, onModerate, 
             <section className="admin-detail-subsection"><h3>Historial de trabajos</h3>{(detalle.trabajos || []).length === 0 && <p className="admin-empty">Sin trabajos en el historial.</p>}{(detalle.trabajos || []).map((item) => <article key={item.id}><strong>{item.titulo} · {ESTADOS[item.estado] || item.estado}</strong><span>{item.categoria} · {item.rol_usuario} · {item.localidad} · {mostrarFecha(item.creado_en)}</span></article>)}</section>
             <div className="admin-modal-actions">
               <button type="button" className="panel-action-button" onClick={onClose}>Cerrar</button>
+              <button type="button" className="panel-action-button" onClick={onEdit}><UserCog size={15} />Editar usuario</button>
               <button type="button" className="panel-action-button" onClick={onEnviarMensaje}><MessageCircle size={15} />Enviar mensaje</button>
               <button type="button" className="panel-action-button panel-primary-action" onClick={onModerate}>Moderar usuario</button>
             </div>
           </>
         )}
+      </section>
+    </div>
+  );
+}
+
+function EditUserModal({ perfil, procesando, error, onClose, onSave }) {
+  const [nombre, setNombre] = useState(perfil.nombre || '');
+  const [telefono, setTelefono] = useState(perfil.telefono || '');
+  const [localidad, setLocalidad] = useState(perfil.localidad || '');
+  const [titular, setTitular] = useState(perfil.titular || '');
+  const [rol, setRol] = useState(perfil.rol || 'cliente');
+  const [restablecerAvatar, setRestablecerAvatar] = useState(false);
+
+  const guardar = (event) => {
+    event.preventDefault();
+    onSave({
+      nombre: nombre.trim(),
+      telefono: telefono.trim(),
+      localidad: localidad.trim(),
+      titular: titular.trim(),
+      rol,
+      restablecerAvatar
+    });
+  };
+
+  return (
+    <div className="admin-modal-backdrop" role="presentation">
+      <section className="admin-detail-modal admin-moderation-modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title">
+        <header><div><span className="section-eyebrow">Edición administrativa</span><h2 id="edit-user-title">{perfil.correo || perfil.nombre}</h2></div><button type="button" className="icon-button" aria-label="Cerrar editor" onClick={onClose}><X size={19} /></button></header>
+        <form className="admin-moderation-form" onSubmit={guardar}>
+          <label><span>Nombre completo</span><input required maxLength={120} value={nombre} onChange={(event) => setNombre(event.target.value)} /></label>
+          <label><span>Teléfono / WhatsApp</span><input type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={telefono} onChange={(event) => setTelefono(event.target.value.replace(/\D/g, '').slice(0, 10))} /></label>
+          <label><span>Ciudad / zona</span><input maxLength={120} value={localidad} onChange={(event) => setLocalidad(event.target.value)} /></label>
+          <label><span>Titular profesional</span><input maxLength={160} value={titular} onChange={(event) => setTitular(event.target.value)} /></label>
+          <label><span>Rol</span><select value={rol} onChange={(event) => setRol(event.target.value)}><option value="cliente">Cliente</option><option value="tecnico">Trabajador / Técnico</option><option value="moderador">Moderador (sin permisos hasta asignarlos)</option></select></label>
+          <label className="admin-inline-check"><input type="checkbox" checked={restablecerAvatar} onChange={(event) => setRestablecerAvatar(event.target.checked)} /><span>Restablecer foto de perfil</span></label>
+          {error && <p role="alert" className="panel-message panel-error">{error}</p>}
+          <div className="admin-modal-actions"><button type="button" className="panel-action-button" onClick={onClose}>Cancelar</button><button type="submit" className="panel-action-button panel-primary-action" disabled={procesando}>{procesando ? 'Guardando...' : 'Guardar usuario'}</button></div>
+        </form>
       </section>
     </div>
   );
@@ -927,6 +1014,116 @@ function ModerationModal({ usuarioObjetivo, procesando, error, onClose, onApply 
           <div className="admin-modal-actions"><button type="button" className="panel-action-button" onClick={onClose}>Cancelar</button><button type="submit" className="panel-action-button panel-primary-action" disabled={procesando}>{procesando ? 'Aplicando...' : 'Confirmar acción'}</button></div>
         </form>
       </section>
+    </div>
+  );
+}
+
+function ModeratorsModule({ sessionToken }) {
+  const [correo, setCorreo] = useState('');
+  const [permisos, setPermisos] = useState({
+    puede_aprobar_tecnicos: false,
+    puede_gestionar_solicitudes: false,
+    puede_responder_soporte: false
+  });
+  const [moderadores, setModeradores] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [procesando, setProcesando] = useState(false);
+  const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+
+  const cargar = useCallback(async () => {
+    const { data, error: queryError } = await supabase.rpc('admin_control_listar_moderadores', {
+      p_session_token: sessionToken
+    });
+    if (queryError) throw queryError;
+    setModeradores(data || []);
+  }, [sessionToken]);
+
+  useEffect(() => {
+    let montado = true;
+    const timer = window.setTimeout(() => {
+      cargar()
+        .catch((loadError) => { if (montado) setError(`No se pudieron cargar los moderadores: ${loadError.message}`); })
+        .finally(() => { if (montado) setCargando(false); });
+    }, 0);
+    return () => {
+      montado = false;
+      window.clearTimeout(timer);
+    };
+  }, [cargar]);
+
+  const guardar = async (event) => {
+    event.preventDefault();
+    setProcesando(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: saveError } = await supabase.rpc('admin_control_configurar_moderador', {
+        p_session_token: sessionToken,
+        p_correo: correo.trim(),
+        p_permisos: permisos
+      });
+      if (saveError) throw saveError;
+      setCorreo('');
+      setAviso('Permisos guardados. La cuenta recibirá acceso de moderación al iniciar sesión.');
+      await cargar();
+    } catch (saveError) {
+      setError(`No se pudieron guardar los permisos: ${saveError.message}`);
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const revocar = async (moderador) => {
+    setProcesando(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: revokeError } = await supabase.rpc('admin_control_revocar_moderador', {
+        p_session_token: sessionToken,
+        p_user_id: moderador.user_id
+      });
+      if (revokeError) throw revokeError;
+      setAviso(`Acceso de moderación revocado para ${moderador.correo}.`);
+      await cargar();
+    } catch (revokeError) {
+      setError(`No se pudo revocar el acceso: ${revokeError.message}`);
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const opcionesPermiso = [
+    ['puede_aprobar_tecnicos', 'Puede aprobar técnicos'],
+    ['puede_gestionar_solicitudes', 'Puede consultar y cancelar solicitudes'],
+    ['puede_responder_soporte', 'Puede responder chats de soporte']
+  ];
+
+  return (
+    <div className="admin-module-content">
+      <div className="admin-module-intro"><div><span className="section-eyebrow">Acceso delegado</span><h2>Gestión de moderadores</h2><p>Los permisos se validan en cada RPC. Los moderadores no pueden acceder al CMS ni administrar cuentas o sesiones principales.</p></div><span className="admin-result-count">{moderadores.length} activos</span></div>
+      {error && <p role="alert" className="panel-message panel-error">{error}</p>}
+      {aviso && <p role="status" className="panel-message panel-success">{aviso}</p>}
+      <form className="moderator-admin-form" onSubmit={guardar}>
+        <label><span>Correo de una cuenta FixNow registrada</span><input type="email" required value={correo} onChange={(event) => setCorreo(event.target.value)} placeholder="persona@ejemplo.com" /></label>
+        <div className="moderator-admin-permissions">
+          {opcionesPermiso.map(([key, label]) => (
+            <label className="admin-inline-check" key={key}><input type="checkbox" checked={permisos[key]} onChange={(event) => setPermisos((actual) => ({ ...actual, [key]: event.target.checked }))} /><span>{label}</span></label>
+          ))}
+        </div>
+        <button type="submit" className="panel-action-button panel-primary-action" disabled={procesando}><UserCog size={15} />{procesando ? 'Guardando...' : 'Guardar permisos'}</button>
+      </form>
+      <div className="moderator-record-list">
+        {cargando && <p className="admin-empty">Cargando moderadores...</p>}
+        {!cargando && moderadores.length === 0 && <p className="admin-empty">Aún no hay moderadores asignados.</p>}
+        {moderadores.map((moderador) => (
+          <article className="moderator-record" key={moderador.user_id}>
+            <span className="admin-user-avatar">{(moderador.nombre || 'FN').split(/\s+/).slice(0, 2).map((parte) => parte[0]).join('').toUpperCase()}</span>
+            <span><strong>{moderador.nombre || moderador.correo}</strong><small>{moderador.correo}</small><small>{opcionesPermiso.filter(([key]) => moderador[key]).map(([, label]) => label.replace('Puede ', '')).join(' · ') || 'Sin permisos asignados'}</small></span>
+            <button type="button" className="panel-action-button" disabled={procesando} onClick={() => revocar(moderador)}>Revocar acceso</button>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
