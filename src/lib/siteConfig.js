@@ -9,6 +9,11 @@ export const DEFAULT_SITE_CONFIG = {
   bannerText: '',
   supportPhone: '',
   footerText: 'Servicios confiables para tu hogar.',
+  allowGuestRequests: true,
+  maintenanceMode: false,
+  maintenanceMessage: 'Estamos realizando mejoras. Vuelve a intentarlo en unos minutos.',
+  highDemandEnabled: false,
+  highDemandMessage: 'Estamos atendiendo una demanda alta. Tu solicitud puede tardar un poco más.',
   primaryColor: '#317cf4',
   featuredCategories: [
     'electricidad',

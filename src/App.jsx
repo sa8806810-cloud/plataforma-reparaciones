@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Wrench,
+  AlertTriangle,
   BadgeCheck,
   UserCheck,
   LogOut,
@@ -516,6 +517,15 @@ export default function App() {
   };
 
   const solicitarServicio = (servicio = null) => {
+    if (configuracionSitio.maintenanceMode) {
+      setAvisoSesion(configuracionSitio.maintenanceMessage || 'Estamos realizando mejoras. Vuelve a intentarlo en unos minutos.');
+      return;
+    }
+    if (!usuario && !configuracionSitio.allowGuestRequests) {
+      setAvisoSesion('Por el momento, inicia sesión o crea una cuenta para solicitar un servicio.');
+      setVista('auth');
+      return;
+    }
     setSeleccionServicio(
       servicio ? { categoria: servicio.categoria, subtipo: servicio.subtipo } : null
     );
@@ -525,7 +535,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell${vista === 'inicio' ? ' landing-theme' : ''}${vista === 'solicitar' ? ' request-theme' : ''}`}
+      className={`app-shell${vista === 'inicio' ? ' landing-theme' : ''}${vista === 'solicitar' ? ' request-theme' : ''}${vista === 'admin' ? ' admin-shell' : ''}`}
       style={{
         '--brand-primary': configuracionSitio.primaryColor,
         minHeight: '100vh',
@@ -534,11 +544,11 @@ export default function App() {
           : 'radial-gradient(circle at 50% -10%, #17284a 0%, #0b1120 48%, #060911 100%)',
         color: vista === 'inicio' ? '#0f172a' : '#f8fafc',
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        padding: 'clamp(12px, 3vw, 24px) clamp(12px, 3vw, 18px) 40px clamp(12px, 3vw, 18px)',
+        padding: vista === 'admin' ? '0' : 'clamp(12px, 3vw, 24px) clamp(12px, 3vw, 18px) 40px clamp(12px, 3vw, 18px)',
         boxSizing: 'border-box'
       }}
     >
-      <header className="app-navbar">
+      {vista !== 'admin' && <header className="app-navbar">
         {configuracionSitio.bannerEnabled && configuracionSitio.bannerText && (
           <div className="site-promo-banner"><Sparkles size={15} />{configuracionSitio.bannerText}</div>
         )}
@@ -614,7 +624,7 @@ export default function App() {
             {menuMovilAbierto ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
-      </header>
+      </header>}
 
       <main className="app-main">
         {errorConfiguracion && vista === 'inicio' && (
@@ -688,6 +698,14 @@ export default function App() {
 
         {vista === 'inicio' && (
           <section className="home-content" id="inicio">
+            {(configuracionSitio.maintenanceMode || configuracionSitio.highDemandEnabled) && (
+              <div className={configuracionSitio.maintenanceMode ? 'site-operational-banner maintenance' : 'site-operational-banner'} role="status">
+                <AlertTriangle size={16} />
+                <span>{configuracionSitio.maintenanceMode
+                  ? configuracionSitio.maintenanceMessage
+                  : configuracionSitio.highDemandMessage}</span>
+              </div>
+            )}
             <section className="hero-panel">
               <div className="hero-copy">
                 <span className="hero-kicker"><span className="status-pulse" />Asistencia rápida y técnicos verificados en tu zona</span>
@@ -935,6 +953,7 @@ export default function App() {
               usuario={usuario}
               sessionToken={adminAccess.token}
               onVolver={() => setVista('inicio')}
+              onCerrarSesion={handleCerrarSesion}
               configuracionSitio={configuracionSitio}
               onConfiguracionPublicada={configurarPublicacion}
               onRecargar={() => {
@@ -980,7 +999,7 @@ export default function App() {
         </Suspense>
       )}
 
-      <footer className="app-footer">
+      {vista !== 'admin' && <footer className="app-footer">
         <div className="footer-column footer-brand-column">
           <div className="footer-brand">
             <span className="brand-mark"><Wrench size={18} /></span>
@@ -1013,7 +1032,7 @@ export default function App() {
             : <span className="footer-muted">Estamos aquí para ayudarte.</span>}
         </div>
         <span className="footer-copyright">© {new Date().getFullYear()} {configuracionSitio.brandName}. {configuracionSitio.footerText}</span>
-      </footer>
+      </footer>}
     </div>
   );
 }
