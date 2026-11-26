@@ -1,8 +1,13 @@
 export const DEFAULT_SITE_CONFIG = {
   brandName: 'FixNow',
   tagline: 'Asistencia y reparaciones al instante',
+  logoUrl: '',
   heroTitle: 'Tu hogar en buenas manos, sin complicaciones.',
   heroSubtitle: 'Encuentra ayuda confiable para reparar, instalar y mantener tu hogar. Describe lo que necesitas y recibe atención de profesionales de tu zona.',
+  servicesTitle: '¿Qué necesitas resolver?',
+  howItWorksTitle: 'Cómo funciona FixNow',
+  techniciansTitle: 'Técnicos verificados',
+  faqTitle: 'Preguntas frecuentes',
   primaryAction: 'Solicitar reparación o instalación',
   secondaryAction: 'Acceso y registro de cuenta',
   bannerEnabled: false,
@@ -33,10 +38,14 @@ export function normalizeSiteConfig(configuracion) {
   const color = /^#[0-9A-Fa-f]{6}$/.test(config.primaryColor)
     ? config.primaryColor
     : DEFAULT_SITE_CONFIG.primaryColor;
+  const logoUrl = typeof config.logoUrl === 'string' && /^https:\/\/\S+$/i.test(config.logoUrl)
+    ? config.logoUrl
+    : '';
 
   return {
     ...config,
     primaryColor: color,
+    logoUrl,
     featuredCategories: Array.isArray(config.featuredCategories)
       ? config.featuredCategories.filter((categoria) =>
         DEFAULT_SITE_CONFIG.featuredCategories.includes(categoria)

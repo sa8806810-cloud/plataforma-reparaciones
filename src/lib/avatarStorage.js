@@ -6,7 +6,7 @@ const TIPOS_AVATAR = {
   'image/webp': 'webp'
 };
 
-export async function subirAvatar(usuarioId, archivo) {
+async function subirImagen(usuarioId, archivo, nombre) {
   const extension = TIPOS_AVATAR[archivo?.type];
   if (!usuarioId || !archivo || !extension) {
     throw new Error('Selecciona una imagen JPG, PNG o WebP.');
@@ -15,7 +15,7 @@ export async function subirAvatar(usuarioId, archivo) {
     throw new Error('La imagen debe pesar 2 MB o menos.');
   }
 
-  const ruta = `${usuarioId}/perfil.${extension}`;
+  const ruta = `${usuarioId}/${nombre}.${extension}`;
   const { error } = await supabase.storage
     .from('avatars')
     .upload(ruta, archivo, {
@@ -30,4 +30,12 @@ export async function subirAvatar(usuarioId, archivo) {
     throw new Error('Storage no devolvió la URL pública del avatar.');
   }
   return data.publicUrl;
+}
+
+export function subirAvatar(usuarioId, archivo) {
+  return subirImagen(usuarioId, archivo, 'perfil');
+}
+
+export function subirLogoSitio(usuarioId, archivo) {
+  return subirImagen(usuarioId, archivo, 'logo-sitio');
 }

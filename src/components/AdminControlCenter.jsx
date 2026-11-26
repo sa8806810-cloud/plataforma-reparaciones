@@ -5,24 +5,33 @@ import {
   ArrowLeft,
   BadgeCheck,
   Ban,
+  Banknote,
+  BriefcaseBusiness,
   Check,
   CheckCircle2,
   Clock3,
   Columns3,
   Copy,
   Download,
+  Eye,
   FileClock,
+  Gift,
   ListFilter,
   LayoutDashboard,
+  ImagePlus,
   Menu,
   MapPinned,
+  MapPin,
   MessageCircle,
   Paintbrush,
+  Phone,
   RefreshCw,
+  CalendarDays,
   Search,
   Send,
   Settings,
   ShieldCheck,
+  Star,
   Table2,
   UserRound,
   Users,
@@ -33,6 +42,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { DEFAULT_SITE_CONFIG, normalizeSiteConfig } from '../lib/siteConfig';
+import { subirLogoSitio } from '../lib/avatarStorage';
 
 const ESTADOS = {
   solicitado: 'Pendiente',
@@ -57,10 +67,13 @@ const MODULOS = [
   { grupo: 'Operación', id: 'zonas', etiqueta: 'Mapa, zonas y categorías', icono: MapPinned },
   { grupo: 'Comunidad', id: 'usuarios', etiqueta: 'Usuarios y técnicos', icono: Users },
   { grupo: 'Comunidad', id: 'moderadores', etiqueta: 'Moderadores', icono: UserCog },
+  { grupo: 'Comunidad', id: 'recompensas', etiqueta: 'Ganancias y recompensas', icono: Gift },
   { grupo: 'Comunidad', id: 'soporte', etiqueta: 'Mensajería y soporte', icono: MessageCircle },
   { grupo: 'Plataforma', id: 'cms', etiqueta: 'Presentación web', icono: Paintbrush },
   { grupo: 'Plataforma', id: 'reglas', etiqueta: 'Configuración y reglas', icono: Settings },
-  { grupo: 'Plataforma', id: 'auditoria', etiqueta: 'Auditoría y seguridad', icono: FileClock }
+  { grupo: 'Plataforma', id: 'auditoria', etiqueta: 'Auditoría y seguridad', icono: FileClock },
+  { grupo: 'Vistas previas', id: 'preview-cliente', etiqueta: 'Panel cliente · demo', icono: Eye },
+  { grupo: 'Vistas previas', id: 'preview-tecnico', etiqueta: 'Panel técnico · demo', icono: Eye }
 ];
 
 function mostrarFecha(fecha, conHora = false) {
@@ -171,9 +184,10 @@ export default function AdminControlCenter({
 
   const solicitudSeleccionada = trabajos.find((trabajo) => trabajo.id === modulo?.solicitudId);
   const moduloActivo = typeof modulo === 'string' ? modulo : 'solicitudes';
+  const esVistaPrevia = moduloActivo.startsWith('preview-');
   const tecnicosPendientes = usuarios.filter((item) => item.rol === 'tecnico' && !item.verificado && item.estado_cuenta === 'activo');
   const solicitudesPendientes = trabajos.filter((item) => item.estado === 'solicitado').length;
-  const seccionesModulo = ['Operación', 'Comunidad', 'Plataforma'].map((grupo) => ({
+  const seccionesModulo = ['Operación', 'Comunidad', 'Plataforma', 'Vistas previas'].map((grupo) => ({
     grupo,
     items: MODULOS.filter((item) => item.grupo === grupo)
   }));
@@ -244,9 +258,11 @@ export default function AdminControlCenter({
             </div>
             <div className="admin-console-actions">
               <span className="admin-console-identity"><ShieldCheck size={15} />{usuario.email}</span>
-              <button type="button" className="panel-action-button" onClick={() => cargarDatos()} disabled={cargando}>
-                <RefreshCw size={15} />Actualizar
-              </button>
+              {esVistaPrevia
+                ? <span className="admin-demo-pill"><Eye size={14} />Datos de demostración</span>
+                : <button type="button" className="panel-action-button" onClick={() => cargarDatos()} disabled={cargando}>
+                  <RefreshCw size={15} />Actualizar
+                </button>}
             </div>
           </header>
           {error && <p role="alert" className="panel-message panel-error">{error}</p>}
@@ -290,6 +306,9 @@ export default function AdminControlCenter({
           {moduloActivo === 'moderadores' && (
             <ModeratorsModule sessionToken={sessionToken} />
           )}
+          {moduloActivo === 'recompensas' && (
+            <RewardsAdminModule sessionToken={sessionToken} />
+          )}
           {moduloActivo === 'soporte' && (
             <SupportInbox
               sessionToken={sessionToken}
@@ -307,6 +326,7 @@ export default function AdminControlCenter({
           )}
           {moduloActivo === 'cms' && (
             <SiteEditor
+              usuarioId={usuario.id}
               sessionToken={sessionToken}
               initialConfig={configuracionSitio || DEFAULT_SITE_CONFIG}
               onPublished={onConfiguracionPublicada}
@@ -322,8 +342,95 @@ export default function AdminControlCenter({
           {moduloActivo === 'auditoria' && (
             <AuditModule sessionToken={sessionToken} />
           )}
+          {esVistaPrevia && <RolePanelPreview role={moduloActivo === 'preview-cliente' ? 'cliente' : 'tecnico'} />}
         </main>
       </div>
+    </section>
+  );
+}
+
+function RolePanelPreview({ role }) {
+  const esCliente = role === 'cliente';
+  const [pestana, setPestana] = useState(esCliente ? 'solicitudes' : 'disponibles');
+  const tabs = esCliente
+    ? [['solicitudes', 'Mis solicitudes'], ['agenda', 'Agendar técnico'], ['perfil', 'Mi perfil']]
+    : [['disponibles', 'Disponibles'], ['activos', 'Mis trabajos'], ['agenda', 'Agenda y cobertura'], ['perfil', 'Perfil profesional']];
+
+  return (
+    <section className="admin-role-preview">
+      <div className="admin-role-preview-banner">
+        <div className="admin-role-preview-icon"><Eye size={19} /></div>
+        <div><strong>Vista previa de {esCliente ? 'Cliente' : 'Técnico'}</strong><p>Explora la experiencia sin crear una cuenta. Los datos son ficticios y los cambios no se guardan.</p></div>
+        <span>SOLO DEMO</span>
+      </div>
+      {!esCliente && <article className="admin-tech-preview-hero">
+        <div className="admin-tech-preview-avatar">CR<span><BadgeCheck size={14} /></span></div>
+        <div className="admin-tech-preview-main">
+          <div className="admin-tech-preview-title"><span className="admin-tech-verified"><BadgeCheck size={14} /> Técnico verificado</span><span className="admin-tech-online"><i /> Disponible ahora</span></div>
+          <h2>Carlos Rodríguez</h2>
+          <p>Electricista residencial · Instalaciones y mantenimiento</p>
+          <div className="admin-tech-preview-meta"><span><MapPin size={14} /> Sahuayo, Michoacán</span><span><BriefcaseBusiness size={14} /> 9 años de experiencia</span><span><Star size={14} /> 4.9 (38 reseñas)</span></div>
+          <div className="admin-tech-preview-skills"><span>Instalaciones eléctricas</span><span>Iluminación</span><span>Centros de carga</span><span>Mantenimiento</span></div>
+        </div>
+        <aside className="admin-tech-completion"><span>Perfil profesional</span><strong>92% completo</strong><div><i /></div><button type="button" disabled>Editar perfil (demo)</button></aside>
+      </article>}
+      <div className="admin-role-preview-heading">
+        <div><span className="section-eyebrow">{esCliente ? 'Espacio del cliente' : 'Actividad y rendimiento'}</span><h2>{esCliente ? 'Hola, Mariana' : 'Tu jornada profesional'}</h2><p>{esCliente ? 'Aquí puedes seguir tus servicios y encontrar profesionales.' : 'Revisa tus solicitudes, agenda y resultados desde un solo lugar.'}</p></div>
+        {esCliente && <span className="admin-demo-profile"><b>ML</b><span>Cliente</span></span>}
+      </div>
+      <div className="admin-role-preview-metrics">
+        {(esCliente
+          ? [['1', 'Servicio en curso'], ['4', 'Servicios completados'], ['100%', 'Perfil completo']]
+          : [['3', 'Trabajos disponibles'], ['1', 'Trabajo activo'], ['96%', 'Calificación']]
+        ).map(([value, label]) => <article key={label}><strong>{value}</strong><span>{label}</span></article>)}
+      </div>
+      <div className="admin-user-tabs" role="tablist" aria-label={`Pestañas de vista previa ${role}`}>
+        {tabs.map(([id, label]) => <button type="button" role="tab" aria-selected={pestana === id} className={pestana === id ? 'active' : ''} key={id} onClick={() => setPestana(id)}>{label}</button>)}
+      </div>
+      {esCliente && pestana === 'solicitudes' && <div className="admin-preview-cards">
+        <article className="admin-preview-service-card">
+          <div className="admin-preview-card-top"><span className="job-badge">Plomería</span><span className="job-badge job-status-badge status-en_camino">Técnico en camino</span></div>
+          <h3>Reparación de fuga en cocina</h3><p>Folio FN-2048 · Sahuayo, Michoacán</p>
+          <div className="admin-preview-progress"><span className="done">Solicitud enviada</span><span className="done">Técnico asignado</span><span className="current">En camino</span><span>Servicio completado</span></div>
+          <div className="admin-preview-tech"><span>JR</span><div><strong>José Ramírez</strong><small>Plomero verificado · 8 años de experiencia</small></div><BadgeCheck size={17} /></div>
+        </article>
+        <article className="admin-preview-service-card compact"><div><strong>Instalación de lámpara</strong><small>Electricidad · Completado</small></div><span className="job-badge job-status-badge status-completado">Completado</span></article>
+      </div>}
+      {esCliente && pestana === 'agenda' && <div className="admin-preview-cards admin-preview-professionals">
+        <article><span className="admin-preview-avatar">JR</span><strong>José Ramírez</strong><small>Plomería · Sahuayo</small><span className="admin-preview-rating">★ 4.9 · 8 años de experiencia</span><button type="button" disabled>Solicitar horario (demo)</button></article>
+        <article><span className="admin-preview-avatar">AG</span><strong>Ana García</strong><small>Electricidad · Jiquilpan</small><span className="admin-preview-rating">★ 4.8 · 6 años de experiencia</span><button type="button" disabled>Solicitar horario (demo)</button></article>
+      </div>}
+      {esCliente && pestana === 'perfil' && <div className="admin-preview-profile-card"><span className="admin-preview-avatar large">ML</span><div><strong>Mariana López</strong><small>mariana.demo@example.com</small><small><MapPin size={13} /> Sahuayo, Michoacán</small></div><button type="button" disabled>Editar perfil (demo)</button></div>}
+      {!esCliente && pestana === 'disponibles' && <div className="admin-preview-cards">
+        {[
+          ['Instalación de ventilador de techo', 'Electricidad · Hoy mismo · 3.2 km', '$850–$1,200 MXN'],
+          ['Fuga debajo del fregadero', 'Plomería · Normal · 5.8 km', '$500–$900 MXN'],
+          ['Revisión de centro de carga', 'Electricidad · Emergencia · 7.1 km', 'Cotización en sitio']
+        ].map(([title, detail, estimate]) => <article className="admin-preview-job-card" key={title}><div className="admin-preview-card-top"><span className="job-badge">Solicitud cercana</span><span className="job-badge job-badge-normal">{detail.split(' · ')[1]}</span></div><h3>{title}</h3><p><MapPin size={14} />{detail.split(' · ')[0]} · {detail.split(' · ')[2]}</p><div className="admin-preview-job-footer"><strong>{estimate}</strong><span>Publicado hace 18 min</span></div><button type="button" disabled>Aceptar trabajo (demo)</button></article>)}
+      </div>}
+      {!esCliente && pestana === 'activos' && <div className="admin-preview-service-card admin-tech-active-job"><div className="admin-preview-card-top"><span className="job-badge">Reparaciones</span><span className="job-badge job-status-badge status-en_proceso">En proceso</span></div><h3>Reparación de puerta y marco</h3><p>Cliente: Laura M. · Jiquilpan · Hoy, 11:30 a. m.</p><div className="admin-preview-job-facts"><span><MapPin size={14} /> A 12 min de tu zona</span><span><Phone size={14} /> Contacto disponible al aceptar</span><span><Clock3 size={14} /> Tiempo estimado: 2 horas</span></div><div className="admin-preview-timeline"><span className="done">Aceptado</span><span className="done">En camino</span><span className="current">En proceso</span><span>Completado</span></div><button type="button" disabled>Actualizar trabajo (demo)</button></div>}
+      {!esCliente && pestana === 'agenda' && <div className="admin-tech-schedule-layout">
+        <article className="admin-tech-detail-card"><div className="admin-tech-detail-heading"><span className="admin-tech-detail-icon"><CalendarDays size={17} /></span><div><h3>Horario semanal</h3><p>Disponibilidad publicada para clientes</p></div><span className="admin-tech-online"><i /> Activo</span></div>
+          <div className="admin-tech-week">{[['Lunes', '08:00 – 18:00', true], ['Martes', '08:00 – 18:00', true], ['Miércoles', '08:00 – 18:00', true], ['Jueves', '08:00 – 18:00', true], ['Viernes', '08:00 – 16:00', true], ['Sábado', '09:00 – 14:00', true], ['Domingo', 'Día libre', false]].map(([day, hours, active]) => <div key={day}><span>{day}</span><strong className={active ? '' : 'off'}>{hours}</strong></div>)}</div>
+        </article>
+        <article className="admin-tech-detail-card"><div className="admin-tech-detail-heading"><span className="admin-tech-detail-icon"><MapPinned size={17} /></span><div><h3>Zona de cobertura</h3><p>Área aproximada de atención</p></div></div><div className="admin-tech-map-placeholder"><span className="admin-tech-map-radius"><i /></span><span className="admin-tech-map-label"><MapPin size={14} /> Sahuayo, Mich.</span></div><div className="admin-tech-coverage-stats"><span>Radio de atención<strong>15 km</strong></span><span>Tiempo promedio<strong>35 min</strong></span></div></article>
+      </div>}
+      {!esCliente && pestana === 'perfil' && <div className="admin-tech-profile-layout">
+        <div className="admin-tech-profile-main">
+          <article className="admin-tech-detail-card"><div className="admin-tech-detail-heading"><span className="admin-tech-detail-icon"><UserRound size={17} /></span><div><h3>Acerca del profesional</h3><p>Presentación y enfoque de trabajo</p></div></div><p className="admin-tech-about">Electricista certificado con experiencia en instalaciones residenciales y comerciales. Me especializo en diagnósticos seguros, soluciones duraderas y atención puntual. Trabajo con materiales de calidad y explico cada alternativa antes de comenzar.</p></article>
+          <article className="admin-tech-detail-card"><div className="admin-tech-detail-heading"><span className="admin-tech-detail-icon"><BriefcaseBusiness size={17} /></span><div><h3>Experiencia laboral</h3><p>Trayectoria profesional verificada</p></div></div>
+            <div className="admin-tech-experience"><span className="admin-tech-exp-icon"><Wrench size={15} /></span><div><strong>Técnico electricista independiente</strong><small>Servicios Rodríguez · 2019 – Actualidad</small><p>Instalaciones, mantenimiento preventivo, diagnóstico de fallas y atención a clientes residenciales.</p></div></div>
+            <div className="admin-tech-experience"><span className="admin-tech-exp-icon"><Wrench size={15} /></span><div><strong>Auxiliar de instalaciones eléctricas</strong><small>Constructora del Valle · 2015 – 2019</small><p>Montaje de cableado, luminarias, tableros y pruebas de seguridad en obra.</p></div></div>
+          </article>
+          <article className="admin-tech-detail-card"><div className="admin-tech-detail-heading"><span className="admin-tech-detail-icon"><BadgeCheck size={17} /></span><div><h3>Especialidades y certificaciones</h3><p>Capacidades destacadas</p></div></div><div className="admin-tech-preview-skills"><span>Instalación eléctrica residencial</span><span>Tableros y centros de carga</span><span>Iluminación LED</span><span>Mantenimiento preventivo</span></div><ul className="admin-tech-certifications"><li><CheckCircle2 size={15} /> Instalaciones eléctricas de baja tensión</li><li><CheckCircle2 size={15} /> Seguridad en trabajos eléctricos</li><li><CheckCircle2 size={15} /> NOM-001-SEDE · fundamentos</li></ul></article>
+        </div>
+        <aside className="admin-tech-profile-aside">
+          <article className="admin-tech-detail-card"><h3>Resumen profesional</h3><div className="admin-tech-facts"><span>Experiencia<strong>9 años</strong></span><span>Servicios completados<strong>126</strong></span><span>Calificación<strong><Star size={14} /> 4.9 / 5</strong></span><span>Tarifa base<strong>$450 MXN</strong></span></div></article>
+          <article className="admin-tech-detail-card"><h3>Reseñas recientes</h3><div className="admin-tech-review"><strong>“Muy profesional y puntual.”</strong><span>★★★★★ · María G.</span><small>Instalación de lámparas · hace 2 semanas</small></div><div className="admin-tech-review"><strong>“Explicó claramente la solución.”</strong><span>★★★★★ · Roberto L.</span><small>Revisión de centro de carga · hace 1 mes</small></div></article>
+          <article className="admin-tech-detail-card admin-tech-contact"><h3>Contacto y atención</h3><p><MapPin size={14} /> Sahuayo y localidades cercanas</p><p><Clock3 size={14} /> Respuesta promedio: 12 min</p><button type="button" disabled>Contactar técnico (demo)</button></article>
+        </aside>
+      </div>}
+      <p className="admin-preview-footer"><ShieldCheck size={14} /> Esta vista es independiente del sistema real: no consulta ni modifica cuentas, solicitudes o perfiles.</p>
     </section>
   );
 }
@@ -1374,17 +1481,35 @@ function SupportInbox({
   );
 }
 
-function SiteEditor({ sessionToken, initialConfig, onPublished }) {
+function SiteEditor({ usuarioId, sessionToken, initialConfig, onPublished }) {
   const [config, setConfig] = useState(() => normalizeSiteConfig(initialConfig));
   const [pestana, setPestana] = useState('marca');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [cambios, setCambios] = useState(false);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
   const actualizar = (campo, valor) => {
     setConfig((actual) => ({ ...actual, [campo]: valor }));
     setCambios(true);
     setAviso('');
+  };
+  const subirLogo = async (event) => {
+    const archivo = event.target.files?.[0];
+    event.target.value = '';
+    if (!archivo) return;
+    setSubiendoLogo(true);
+    setError('');
+    setAviso('');
+    try {
+      const logoUrl = await subirLogoSitio(usuarioId, archivo);
+      actualizar('logoUrl', logoUrl);
+      setAviso('Logo cargado. Publícalo para mostrarlo en el sitio.');
+    } catch (uploadError) {
+      setError(`No se pudo subir el logo: ${uploadError.message}`);
+    } finally {
+      setSubiendoLogo(false);
+    }
   };
   const guardar = async (event) => {
     event.preventDefault();
@@ -1426,6 +1551,7 @@ function SiteEditor({ sessionToken, initialConfig, onPublished }) {
       <div className="admin-cms-tabs" role="tablist" aria-label="Secciones de presentación">
         {[
           ['marca', 'Marca y Hero'],
+          ['titulares', 'Títulos de secciones'],
           ['banner', 'Banner de avisos'],
           ['contacto', 'Contacto y Footer'],
           ['preview', 'Vista previa rápida']
@@ -1436,6 +1562,19 @@ function SiteEditor({ sessionToken, initialConfig, onPublished }) {
           {pestana === 'marca' && <section className="admin-cms-group"><h3><Settings size={16} />Marca y hero</h3>
             <label><span>Nombre de marca</span><input required maxLength={80} value={config.brandName} onChange={(event) => actualizar('brandName', event.target.value)} /></label>
             <label><span>Eslogan del navbar</span><input maxLength={160} value={config.tagline} onChange={(event) => actualizar('tagline', event.target.value)} /></label>
+            <div className="admin-logo-editor">
+              <div className="admin-logo-preview">{config.logoUrl ? <img src={config.logoUrl} alt="Vista previa del logo" /> : <Wrench size={24} />}</div>
+              <div className="admin-logo-controls">
+                <strong>Logo del sitio</strong>
+                <small>JPG, PNG o WebP · máximo 2 MB. También puedes usar una URL HTTPS.</small>
+                <label className="panel-action-button admin-logo-upload">
+                  <ImagePlus size={15} />{subiendoLogo ? 'Subiendo...' : 'Subir logo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" disabled={subiendoLogo} onChange={subirLogo} />
+                </label>
+                {config.logoUrl && <button type="button" className="admin-text-button" onClick={() => actualizar('logoUrl', '')}>Restablecer ícono FixNow</button>}
+              </div>
+            </div>
+            <label><span>URL del logo (opcional)</span><input type="url" maxLength={1000} value={config.logoUrl} onChange={(event) => actualizar('logoUrl', event.target.value)} placeholder="https://..." /></label>
             <label><span>Título principal</span><textarea required rows={2} maxLength={240} value={config.heroTitle} onChange={(event) => actualizar('heroTitle', event.target.value)} /></label>
             <label><span>Subtítulo</span><textarea rows={3} maxLength={1000} value={config.heroSubtitle} onChange={(event) => actualizar('heroSubtitle', event.target.value)} /></label>
             <label><span>Botón principal</span><input required maxLength={100} value={config.primaryAction} onChange={(event) => actualizar('primaryAction', event.target.value)} /></label>
@@ -1443,6 +1582,13 @@ function SiteEditor({ sessionToken, initialConfig, onPublished }) {
             <label><span>Color principal</span><span className="admin-color-input"><input type="color" value={config.primaryColor} onChange={(event) => actualizar('primaryColor', event.target.value)} /><code>{config.primaryColor}</code></span></label>
             <div className="admin-cms-toggles">{[['showHowItWorks', 'Cómo funciona'], ['showTechnicians', 'Directorio de técnicos'], ['showFaq', 'Preguntas frecuentes']].map(([key, label]) => <label className="admin-inline-check" key={key}><input type="checkbox" checked={config[key]} onChange={(event) => actualizar(key, event.target.checked)} /><span>{label}</span></label>)}</div>
             <div className="admin-cms-categories">{categorias.map(([key, label]) => <label className="admin-inline-check" key={key}><input type="checkbox" checked={selected.has(key)} onChange={(event) => actualizar('featuredCategories', event.target.checked ? [...config.featuredCategories, key] : config.featuredCategories.filter((item) => item !== key))} /><span>{label}</span></label>)}</div>
+          </section>}
+          {pestana === 'titulares' && <section className="admin-cms-group"><h3><LayoutDashboard size={16} />Títulos de la página de inicio</h3>
+            <p className="admin-cms-help">Personaliza los encabezados que verán tus visitantes en cada sección principal.</p>
+            <label><span>Sección de servicios</span><input required maxLength={100} value={config.servicesTitle} onChange={(event) => actualizar('servicesTitle', event.target.value)} /></label>
+            <label><span>Cómo funciona</span><input required maxLength={100} value={config.howItWorksTitle} onChange={(event) => actualizar('howItWorksTitle', event.target.value)} /></label>
+            <label><span>Técnicos destacados</span><input required maxLength={100} value={config.techniciansTitle} onChange={(event) => actualizar('techniciansTitle', event.target.value)} /></label>
+            <label><span>Preguntas frecuentes</span><input required maxLength={100} value={config.faqTitle} onChange={(event) => actualizar('faqTitle', event.target.value)} /></label>
           </section>}
           {pestana === 'banner' && <section className="admin-cms-group"><h3><Paintbrush size={16} />Banner de avisos</h3>
             <label className="admin-inline-check"><input type="checkbox" checked={config.bannerEnabled} onChange={(event) => actualizar('bannerEnabled', event.target.checked)} /><span>Mostrar banner promocional</span></label>
@@ -1458,8 +1604,9 @@ function SiteEditor({ sessionToken, initialConfig, onPublished }) {
         <aside className={`admin-live-preview${pestana === 'preview' ? ' preview-focused' : ''}`} style={{ '--brand-primary': config.primaryColor }}>
           <span className="section-eyebrow">Vista previa en vivo</span>
           {config.bannerEnabled && config.bannerText && <div className="preview-banner">{config.bannerText}</div>}
-          <div className="preview-navbar"><strong>{config.brandName}</strong><span>{config.tagline}</span></div>
+          <div className="preview-navbar">{config.logoUrl && <img className="preview-logo" src={config.logoUrl} alt="" />}<strong>{config.brandName}</strong><span>{config.tagline}</span></div>
           <div className="preview-hero"><span>FixNow para tu hogar</span><h3>{config.heroTitle}</h3><p>{config.heroSubtitle}</p><button type="button">{config.primaryAction}</button></div>
+          <div className="preview-page-headings"><span>{config.servicesTitle}</span><span>{config.howItWorksTitle}</span><span>{config.techniciansTitle}</span><span>{config.faqTitle}</span></div>
           <div className="preview-section-chips">{config.featuredCategories.map((key) => <span key={key}>{categorias.find(([id]) => id === key)?.[1] || key}</span>)}</div>
           <footer>{config.footerText}{config.supportPhone && <span> · {config.supportPhone}</span>}</footer>
         </aside>
@@ -1587,6 +1734,166 @@ function ZonesModule({ trabajos }) {
           })}
         </section>
       </div>
+    </div>
+  );
+}
+
+function RewardsAdminModule({ sessionToken }) {
+  const recompensaVacia = {
+    id: null,
+    nombre: '',
+    descripcion: '',
+    meta_trabajos: 10,
+    premio: '',
+    activa: true
+  };
+  const [recompensas, setRecompensas] = useState([]);
+  const [transferencias, setTransferencias] = useState([]);
+  const [formulario, setFormulario] = useState(recompensaVacia);
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    setError('');
+    try {
+      const [recompensasResult, transferenciasResult] = await Promise.all([
+        supabase.rpc('admin_listar_recompensas', { p_session_token: sessionToken }),
+        supabase.rpc('admin_listar_transferencias_pendientes', { p_session_token: sessionToken })
+      ]);
+      const fallido = [recompensasResult, transferenciasResult].find((resultado) => resultado.error);
+      if (fallido?.error) throw fallido.error;
+      setRecompensas(recompensasResult.data || []);
+      setTransferencias(transferenciasResult.data || []);
+    } catch (loadError) {
+      setError(`No se pudieron cargar recompensas y saldos: ${loadError.message}`);
+    } finally {
+      setCargando(false);
+    }
+  }, [sessionToken]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(cargar, 0);
+    return () => window.clearTimeout(timer);
+  }, [cargar]);
+
+  const guardar = async (event) => {
+    event.preventDefault();
+    setGuardando(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: saveError } = await supabase.rpc('admin_guardar_recompensa', {
+        p_session_token: sessionToken,
+        p_id: formulario.id,
+        p_nombre: formulario.nombre,
+        p_descripcion: formulario.descripcion,
+        p_meta_trabajos: Number(formulario.meta_trabajos),
+        p_premio: formulario.premio,
+        p_activa: formulario.activa
+      });
+      if (saveError) throw saveError;
+      setFormulario(recompensaVacia);
+      setAviso('Recompensa publicada y acción registrada en auditoría.');
+      await cargar();
+    } catch (saveError) {
+      setError(`No se pudo guardar la recompensa: ${saveError.message}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const eliminar = async (recompensa) => {
+    if (!window.confirm(`¿Eliminar la recompensa "${recompensa.nombre}"?`)) return;
+    setError('');
+    setAviso('');
+    try {
+      const { error: deleteError } = await supabase.rpc('admin_eliminar_recompensa', {
+        p_session_token: sessionToken,
+        p_id: recompensa.id
+      });
+      if (deleteError) throw deleteError;
+      setAviso('Recompensa eliminada y acción registrada en auditoría.');
+      await cargar();
+    } catch (deleteError) {
+      setError(`No se pudo eliminar la recompensa: ${deleteError.message}`);
+    }
+  };
+
+  const liquidar = async (transferencia) => {
+    setGuardando(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: settleError } = await supabase.rpc('admin_liquidar_transferencia', {
+        p_session_token: sessionToken,
+        p_ganancia_id: transferencia.ganancia_id
+      });
+      if (settleError) throw settleError;
+      setAviso(`Transferencia de $${Number(transferencia.monto).toLocaleString('es-MX')} marcada como liquidada y auditada.`);
+      await cargar();
+    } catch (settleError) {
+      setError(`No se pudo liquidar la transferencia: ${settleError.message}`);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const editar = (recompensa) => {
+    setFormulario({ ...recompensa });
+    setAviso('');
+  };
+
+  return (
+    <div className="admin-module-content">
+      <div className="admin-module-intro">
+        <div><span className="section-eyebrow">Reconocimiento y pagos registrados</span><h2>Ganancias y recompensas</h2><p>Publica metas para técnicos y revisa transferencias que aún no has confirmado como liquidadas.</p></div>
+        <div className="admin-module-intro-actions"><span className="admin-result-count">{recompensas.length} recompensas · {transferencias.length} saldos</span><button type="button" className="panel-action-button" onClick={cargar} disabled={cargando}><RefreshCw size={15} />Actualizar</button></div>
+      </div>
+      {error && <p role="alert" className="panel-message panel-error">{error}</p>}
+      {aviso && <p role="status" className="panel-message panel-success">{aviso}</p>}
+      {cargando && <p className="panel-message">Cargando recompensas y transferencias…</p>}
+      <div className="admin-rewards-layout">
+        <section className="admin-reward-editor admin-zone-card">
+          <div className="admin-card-heading"><div><span className="section-eyebrow">Programa de reconocimiento</span><h3>{formulario.id ? 'Editar recompensa' : 'Crear recompensa'}</h3></div><Gift size={18} /></div>
+          <form onSubmit={guardar}>
+            <label>Nombre<input required maxLength={100} value={formulario.nombre} onChange={(event) => setFormulario((actual) => ({ ...actual, nombre: event.target.value }))} placeholder="Ej. Técnico destacado" /></label>
+            <label>Descripción<textarea maxLength={500} rows={3} value={formulario.descripcion} onChange={(event) => setFormulario((actual) => ({ ...actual, descripcion: event.target.value }))} placeholder="Explica cómo puede conseguirla" /></label>
+            <label>Meta de trabajos completados<input required type="number" min="1" max="100000" value={formulario.meta_trabajos} onChange={(event) => setFormulario((actual) => ({ ...actual, meta_trabajos: event.target.value }))} /></label>
+            <label>Premio o reconocimiento<input maxLength={120} value={formulario.premio} onChange={(event) => setFormulario((actual) => ({ ...actual, premio: event.target.value }))} placeholder="Ej. Insignia Oro o bono externo" /></label>
+            <label className="admin-reward-active"><input type="checkbox" checked={formulario.activa} onChange={(event) => setFormulario((actual) => ({ ...actual, activa: event.target.checked }))} />Publicar para técnicos</label>
+            <div className="admin-reward-form-actions">
+              <button type="submit" className="panel-action-button panel-primary-action" disabled={guardando}><Gift size={15} />{guardando ? 'Guardando…' : formulario.id ? 'Guardar cambios' : 'Publicar recompensa'}</button>
+              {formulario.id && <button type="button" className="panel-action-button" disabled={guardando} onClick={() => setFormulario(recompensaVacia)}>Cancelar edición</button>}
+            </div>
+          </form>
+        </section>
+        <section className="admin-reward-list admin-zone-card">
+          <div className="admin-card-heading"><div><span className="section-eyebrow">Catálogo</span><h3>Recompensas disponibles</h3></div><Gift size={18} /></div>
+          {recompensas.length === 0 && !cargando && <p className="admin-empty">Aún no has creado recompensas.</p>}
+          {recompensas.map((recompensa) => (
+            <article className="admin-reward-row" key={recompensa.id}>
+              <span className="admin-reward-row-icon"><Gift size={17} /></span>
+              <div><strong>{recompensa.nombre}</strong><small>{recompensa.meta_trabajos} trabajos · {recompensa.activa ? 'Publicada' : 'Pausada'}</small><p>{recompensa.descripcion || recompensa.premio || 'Sin descripción'}</p></div>
+              <div className="admin-reward-row-actions"><button type="button" onClick={() => editar(recompensa)}>Editar</button><button type="button" className="danger" onClick={() => eliminar(recompensa)}>Eliminar</button></div>
+            </article>
+          ))}
+        </section>
+      </div>
+      <section className="admin-payouts-card admin-zone-card">
+        <div className="admin-card-heading"><div><span className="section-eyebrow">Saldo por liquidar</span><h3>Transferencias pendientes</h3></div><Banknote size={18} /></div>
+        <p className="admin-payouts-disclaimer">Marca una transferencia como liquidada solo después de comprobarla fuera de FixNow. La plataforma no procesa movimientos bancarios.</p>
+        {transferencias.length === 0 && !cargando && <p className="admin-empty">No hay transferencias pendientes.</p>}
+        {transferencias.map((transferencia) => (
+          <article className="admin-payout-row" key={transferencia.ganancia_id}>
+            <div><strong>{transferencia.tecnico_nombre}</strong><small>{transferencia.titulo} · Folio {transferencia.folio || transferencia.trabajo_id}</small><small>{mostrarFecha(transferencia.creado_en, true)}</small></div>
+            <strong>${Number(transferencia.monto).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN</strong>
+            <button type="button" className="panel-action-button panel-primary-action" disabled={guardando} onClick={() => liquidar(transferencia)}>Marcar liquidada</button>
+          </article>
+        ))}
+      </section>
     </div>
   );
 }

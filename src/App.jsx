@@ -610,7 +610,9 @@ export default function App() {
             onClick={navegarA('inicio')}
             aria-label={`${configuracionSitio.brandName}, volver al inicio`}
           >
-            <span className="brand-mark"><Wrench size={20} /></span>
+            <span className="brand-mark">{configuracionSitio.logoUrl
+              ? <img src={configuracionSitio.logoUrl} alt="" />
+              : <Wrench size={20} />}</span>
             <span>
               <span className="brand-name">{configuracionSitio.brandName}</span>
               <span className="brand-subtitle">{configuracionSitio.tagline}</span>
@@ -815,7 +817,7 @@ export default function App() {
             <section className="services-section" id="servicios">
               <div className="section-heading">
                 <span className="section-eyebrow">Soluciones para tu hogar</span>
-                <h2>¿Qué necesitas resolver?</h2>
+                <h2>{configuracionSitio.servicesTitle}</h2>
                 <p>Encuentra el servicio adecuado y solicita ayuda en unos pocos pasos.</p>
               </div>
               <label className="service-search">
@@ -847,7 +849,7 @@ export default function App() {
             {configuracionSitio.showHowItWorks && <section className="how-section" id="como-funciona">
               <div className="section-heading">
                 <span className="section-eyebrow">Simple y transparente</span>
-                <h2>Cómo funciona FixNow</h2>
+                <h2>{configuracionSitio.howItWorksTitle}</h2>
                 <p>Una experiencia sencilla, tanto si necesitas ayuda como si ofreces tus servicios.</p>
               </div>
               <div className="audience-tabs" role="tablist" aria-label="Cómo funciona">
@@ -879,6 +881,7 @@ export default function App() {
             {configuracionSitio.showTechnicians && <Suspense fallback={<p className="panel-message">Cargando directorio de técnicos...</p>}>
               <DirectorioTecnicos
                 excluirUsuarioId={usuarioId}
+                titulo={configuracionSitio.techniciansTitle}
                 onRegistro={() => setVista('auth')}
                 onVerPerfil={(id) => {
                   setPerfilTecnicoId(id);
@@ -890,7 +893,7 @@ export default function App() {
             {configuracionSitio.showFaq && <section className="faq-section" id="preguntas">
               <div className="section-heading">
                 <span className="section-eyebrow">Resolvemos tus dudas</span>
-                <h2>Preguntas frecuentes</h2>
+                <h2>{configuracionSitio.faqTitle}</h2>
               </div>
               <div className="faq-list">
                 <details>
@@ -1060,7 +1063,9 @@ export default function App() {
       {vista !== 'admin' && <footer className="app-footer">
         <div className="footer-column footer-brand-column">
           <div className="footer-brand">
-            <span className="brand-mark"><Wrench size={18} /></span>
+            <span className="brand-mark">{configuracionSitio.logoUrl
+              ? <img src={configuracionSitio.logoUrl} alt="" />
+              : <Wrench size={18} />}</span>
             <div>
               <strong>{configuracionSitio.brandName}</strong>
               <span>{configuracionSitio.tagline}</span>

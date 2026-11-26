@@ -15,6 +15,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import AgendaTecnicos from './AgendaTecnicos';
 import PerfilCliente from './PerfilCliente';
+import MapaSeguimiento from './MapaSeguimiento';
 
 const ETIQUETAS_ESTADO = {
   solicitado: 'Pendiente',
@@ -230,6 +231,9 @@ export default function MisSolicitudes({ usuario, onVolver, onNuevaSolicitud, on
                 <span className="job-meta"><CalendarDays size={15} />Horario solicitado: {solicitud.detalles_tecnicos.fecha_agendada.replace('T', ' · ')}</span>
               )}
               <EstadoTimeline estado={solicitud.estado} />
+              {solicitud.tecnico_id && ['aceptado', 'en_camino', 'en_proceso'].includes(solicitud.estado) && (
+                <MapaSeguimiento trabajo={solicitud} modo="cliente" />
+              )}
               {solicitud.estado === 'solicitado' && !solicitud.tecnico_id && (
                 <button
                   type="button"

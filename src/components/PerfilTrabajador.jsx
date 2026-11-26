@@ -7,6 +7,8 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   GraduationCap,
   MapPin,
@@ -61,8 +63,19 @@ const CONFIG_TECNICO_INICIAL = {
   radio_km: 10,
   en_linea: false,
   disponibilidad_semanal: AGENDA_INICIAL,
-  fechas_bloqueadas: []
+  fechas_bloqueadas: [],
+  disponibilidad_fechas: {}
 };
+
+function fechaLocalISO(fecha) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+}
+
+function diaAgenda(fecha) {
+  return ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'][
+    new Date(`${fecha}T12:00:00`).getDay()
+  ];
+}
 
 function mostrarFecha(fecha) {
   if (!fecha) return 'Actualidad';
@@ -101,8 +114,13 @@ export default function PerfilTrabajador({
   const [modoExperiencia, setModoExperiencia] = useState(null);
   const [experienciaForm, setExperienciaForm] = useState(EXPERIENCIA_VACIA);
   const [configTecnico, setConfigTecnico] = useState(CONFIG_TECNICO_INICIAL);
-  const [fechaBloqueada, setFechaBloqueada] = useState('');
   const [guardandoCobertura, setGuardandoCobertura] = useState(false);
+  const [mesAgenda, setMesAgenda] = useState(() => {
+    const hoy = new Date();
+    return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  });
+  const [fechaAgendaSeleccionada, setFechaAgendaSeleccionada] = useState(() => fechaLocalISO(new Date()));
+  const [guardandoFechaAgenda, setGuardandoFechaAgenda] = useState(false);
   const [subiendoAvatar, setSubiendoAvatar] = useState(false);
   const mapaRef = useRef(null);
 
@@ -160,7 +178,8 @@ export default function PerfilTrabajador({
               ...AGENDA_INICIAL,
               ...(resultado.configuracion.disponibilidad_semanal || {})
             },
-            fechas_bloqueadas: resultado.configuracion.fechas_bloqueadas || []
+            fechas_bloqueadas: resultado.configuracion.fechas_bloqueadas || [],
+            disponibilidad_fechas: resultado.configuracion.disponibilidad_fechas || {}
           });
         }
       })
@@ -296,13 +315,81 @@ export default function PerfilTrabajador({
     }));
   };
 
-  const agregarFechaBloqueada = () => {
-    if (!fechaBloqueada || configTecnico.fechas_bloqueadas.includes(fechaBloqueada)) return;
-    setConfigTecnico((actual) => ({
-      ...actual,
-      fechas_bloqueadas: [...actual.fechas_bloqueadas, fechaBloqueada].sort()
-    }));
-    setFechaBloqueada('');
+  const horarioBaseSeleccionado = configTecnico.disponibilidad_semanal[diaAgenda(fechaAgendaSeleccionada)]
+    || { activo: false, inicio: '08:00', fin: '17:00' };
+  const excepcionSeleccionada = configTecnico.disponibilidad_fechas[fechaAgendaSeleccionada];
+  const fechaBloqueadaSeleccionada = configTecnico.fechas_bloqueadas.includes(fechaAgendaSeleccionada);
+  const horarioSeleccionado = excepcionSeleccionada || {
+    ...horarioBaseSeleccionado,
+    activo: fechaBloqueadaSeleccionada ? false : horarioBaseSeleccionado.activo
+  };
+  const fechaAgendaHoy = fechaLocalISO(new Date());
+  const primerDiaMes = new Date(mesAgenda.getFullYear(), mesAgenda.getMonth(), 1);
+  const diasEnMes = new Date(mesAgenda.getFullYear(), mesAgenda.getMonth() + 1, 0).getDate();
+  const espaciosMes = (primerDiaMes.getDay() + 6) % 7;
+  const calendarioDias = Array.from({ length: espaciosMes + diasEnMes }, (_, indice) =>
+    indice < espaciosMes ? null : new Date(mesAgenda.getFullYear(), mesAgenda.getMonth(), indice - espaciosMes + 1)
+  );
+  const mesSiguiente = new Date(mesAgenda.getFullYear(), mesAgenda.getMonth() + 1, 1);
+  const ultimoDiaMesSiguiente = new Date(mesSiguiente.getFullYear(), mesSiguiente.getMonth() + 1, 0);
+  const limiteAgenda = new Date();
+  limiteAgenda.setDate(limiteAgenda.getDate() + 180);
+  const puedeAvanzarMes = ultimoDiaMesSiguiente <= limiteAgenda;
+
+  const actualizarExcepcionSeleccionada = (campo, valor) => {
+    setConfigTecnico((actual) => {
+      const base = actual.disponibilidad_fechas[fechaAgendaSeleccionada]
+        || actual.disponibilidad_semanal[diaAgenda(fechaAgendaSeleccionada)]
+        || { activo: false, inicio: '08:00', fin: '17:00' };
+      return {
+        ...actual,
+        disponibilidad_fechas: {
+          ...actual.disponibilidad_fechas,
+          [fechaAgendaSeleccionada]: { ...base, [campo]: valor }
+        }
+      };
+    });
+  };
+
+  const guardarExcepcionAgenda = async (restaurarSemanal = false) => {
+    setGuardandoFechaAgenda(true);
+    setError('');
+    setAviso('');
+    try {
+      const { error: saveError } = await supabase.rpc('tecnico_guardar_agenda_fecha', {
+        p_fecha: fechaAgendaSeleccionada,
+        p_activo: Boolean(horarioSeleccionado.activo),
+        p_inicio: horarioSeleccionado.activo ? horarioSeleccionado.inicio : null,
+        p_fin: horarioSeleccionado.activo ? horarioSeleccionado.fin : null,
+        p_restaurar_semanal: restaurarSemanal
+      });
+      if (saveError) throw saveError;
+
+      setConfigTecnico((actual) => {
+        const disponibilidadFechas = { ...actual.disponibilidad_fechas };
+        if (restaurarSemanal) {
+          delete disponibilidadFechas[fechaAgendaSeleccionada];
+        } else {
+          disponibilidadFechas[fechaAgendaSeleccionada] = {
+            activo: Boolean(horarioSeleccionado.activo),
+            inicio: horarioSeleccionado.activo ? horarioSeleccionado.inicio : null,
+            fin: horarioSeleccionado.activo ? horarioSeleccionado.fin : null
+          };
+        }
+        return {
+          ...actual,
+          disponibilidad_fechas: disponibilidadFechas,
+          fechas_bloqueadas: actual.fechas_bloqueadas.filter((fecha) => fecha !== fechaAgendaSeleccionada)
+        };
+      });
+      setAviso(restaurarSemanal
+        ? 'Se restauró el horario semanal para esta fecha.'
+        : 'La fecha quedó guardada y se publicará para clientes en unos segundos.');
+    } catch (saveError) {
+      setError(`No se pudo guardar la fecha de agenda: ${formatSupabaseError(saveError)}`);
+    } finally {
+      setGuardandoFechaAgenda(false);
+    }
   };
 
   useEffect(() => {
@@ -571,6 +658,7 @@ export default function PerfilTrabajador({
                     </button>
                   </div>
                 </div>
+                <div className="schedule-subheading"><div><strong>Horario semanal habitual</strong><span>Se repite cada semana; puedes personalizar fechas abajo.</span></div></div>
                 <div className="weekly-schedule">
                   {DIAS_SEMANA.map(([dia, etiqueta]) => {
                     const horario = configTecnico.disponibilidad_semanal[dia] || { activo: false, inicio: '08:00', fin: '17:00' };
@@ -584,17 +672,63 @@ export default function PerfilTrabajador({
                     );
                   })}
                 </div>
-                <div className="blocked-dates">
-                  <label><span>Días libres puntuales</span><input type="date" min={new Date().toISOString().slice(0, 10)} value={fechaBloqueada} onChange={(event) => setFechaBloqueada(event.target.value)} /></label>
-                  <button type="button" className="panel-action-button" disabled={!fechaBloqueada} onClick={agregarFechaBloqueada}>Agregar día libre</button>
-                  {configTecnico.fechas_bloqueadas.map((fecha) => (
-                    <button type="button" className="blocked-date-chip" key={fecha} onClick={() => setConfigTecnico((actual) => ({
-                      ...actual,
-                      fechas_bloqueadas: actual.fechas_bloqueadas.filter((item) => item !== fecha)
-                    }))}>
-                      {fecha} ×
-                    </button>
-                  ))}
+                <div className="technician-calendar-editor">
+                  <div className="schedule-subheading">
+                    <div><strong>Calendario de trabajo</strong><span>Selecciona una fecha para cambiar su disponibilidad y horario.</span></div>
+                    <span className="schedule-live-badge"><i /> Se publica al guardar</span>
+                  </div>
+                  <div className="schedule-calendar">
+                    <div className="schedule-calendar-toolbar">
+                      <button type="button" aria-label="Mes anterior" disabled={mesAgenda.getFullYear() === new Date().getFullYear() && mesAgenda.getMonth() === new Date().getMonth()} onClick={() => setMesAgenda((actual) => new Date(actual.getFullYear(), actual.getMonth() - 1, 1))}><ChevronLeft size={17} /></button>
+                      <strong>{mesAgenda.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</strong>
+                      <button type="button" aria-label="Mes siguiente" disabled={!puedeAvanzarMes} onClick={() => setMesAgenda((actual) => new Date(actual.getFullYear(), actual.getMonth() + 1, 1))}><ChevronRight size={17} /></button>
+                    </div>
+                    <div className="schedule-calendar-weekdays">{['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((dia) => <span key={dia}>{dia}</span>)}</div>
+                    <div className="schedule-calendar-days">
+                      {calendarioDias.map((dia, indice) => {
+                        if (!dia) return <span className="schedule-calendar-empty" key={`vacio-${indice}`} />;
+                        const claveFecha = fechaLocalISO(dia);
+                        const excepcion = configTecnico.disponibilidad_fechas[claveFecha];
+                        const diaSemana = configTecnico.disponibilidad_semanal[diaAgenda(claveFecha)];
+                        const bloqueado = configTecnico.fechas_bloqueadas.includes(claveFecha);
+                        const activo = !bloqueado && Boolean(excepcion ? excepcion.activo : diaSemana?.activo);
+                        const pasado = claveFecha < fechaAgendaHoy;
+                        const clase = [
+                          'schedule-calendar-day',
+                          activo ? 'working' : 'day-off',
+                          excepcion || bloqueado ? 'has-override' : '',
+                          claveFecha === fechaAgendaSeleccionada ? 'selected' : '',
+                          pasado ? 'past' : ''
+                        ].filter(Boolean).join(' ');
+                        return (
+                          <button
+                            type="button"
+                            key={claveFecha}
+                            className={clase}
+                            aria-pressed={claveFecha === fechaAgendaSeleccionada}
+                            aria-label={`${dia.toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}: ${activo ? 'disponible' : 'día libre'}`}
+                            disabled={pasado || dia > limiteAgenda}
+                            onClick={() => setFechaAgendaSeleccionada(claveFecha)}
+                          >
+                            <span>{dia.getDate()}</span>
+                            <i />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="schedule-calendar-legend"><span><i className="working" />Disponible semanalmente</span><span><i className="custom" />Fecha personalizada</span><span><i className="day-off" />Día libre</span></div>
+                  </div>
+                  <div className="schedule-date-editor">
+                    <div className="schedule-date-heading"><div><span className="section-eyebrow">Fecha seleccionada</span><strong>{new Date(`${fechaAgendaSeleccionada}T12:00:00`).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</strong></div><label className="schedule-date-toggle"><input type="checkbox" checked={Boolean(horarioSeleccionado.activo)} disabled={!perfil.verificado || fechaAgendaSeleccionada < fechaAgendaHoy} onChange={(event) => actualizarExcepcionSeleccionada('activo', event.target.checked)} /><span>Trabajar este día</span></label></div>
+                    {fechaBloqueadaSeleccionada && !excepcionSeleccionada && <p className="field-note">Esta fecha estaba marcada como día libre. Al guardar disponibilidad se quitará ese bloqueo.</p>}
+                    <div className="schedule-date-hours">
+                      <label><span>Desde</span><input type="time" value={horarioSeleccionado.inicio || '08:00'} disabled={!horarioSeleccionado.activo} onChange={(event) => actualizarExcepcionSeleccionada('inicio', event.target.value)} /></label>
+                      <label><span>Hasta</span><input type="time" value={horarioSeleccionado.fin || '17:00'} disabled={!horarioSeleccionado.activo} onChange={(event) => actualizarExcepcionSeleccionada('fin', event.target.value)} /></label>
+                      <button type="button" className="panel-action-button panel-primary-action" disabled={!perfil.verificado || guardandoFechaAgenda || fechaAgendaSeleccionada < fechaAgendaHoy} onClick={() => guardarExcepcionAgenda(false)}><Save size={15} />{guardandoFechaAgenda ? 'Guardando...' : 'Guardar fecha'}</button>
+                    </div>
+                    {excepcionSeleccionada && <button type="button" className="schedule-reset-button" disabled={guardandoFechaAgenda} onClick={() => guardarExcepcionAgenda(true)}>Restablecer horario semanal para esta fecha</button>}
+                    {!perfil.verificado && <p className="field-note">La agenda pública se activa cuando tu perfil sea verificado.</p>}
+                  </div>
                 </div>
               </section>
 

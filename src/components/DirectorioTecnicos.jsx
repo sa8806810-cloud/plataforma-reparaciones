@@ -7,7 +7,7 @@ function iniciales(nombre = '') {
   return nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || '').join('').toUpperCase() || 'FN';
 }
 
-export default function DirectorioTecnicos({ onVerPerfil, onRegistro, excluirUsuarioId }) {
+export default function DirectorioTecnicos({ onVerPerfil, onRegistro, excluirUsuarioId, titulo = 'Técnicos verificados' }) {
   const [tecnicos, setTecnicos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -43,7 +43,7 @@ export default function DirectorioTecnicos({ onVerPerfil, onRegistro, excluirUsu
     <section className="directory-section" id="tecnicos">
       <div className="section-heading">
         <span className="section-eyebrow">Profesionales de tu zona</span>
-        <h2>Técnicos verificados</h2>
+        <h2>{titulo}</h2>
         <p>Conoce su experiencia y especialidades antes de solicitar tu servicio.</p>
       </div>
       {cargando && <p className="panel-message">Cargando profesionales...</p>}

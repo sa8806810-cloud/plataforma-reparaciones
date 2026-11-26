@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  Banknote,
   CheckCircle2,
   Clock3,
   Droplets,
@@ -12,10 +13,13 @@ import {
   Refrigerator,
   RefreshCw,
   Wrench,
+  X,
   Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import PerfilTrabajador from './PerfilTrabajador';
+import MapaSeguimiento from './MapaSeguimiento';
+import CentroGanancias from './CentroGanancias';
 
 const ICONOS_CATEGORIA = {
   electricidad: Zap,
@@ -64,17 +68,37 @@ function mostrarEstado(estado) {
   return etiquetas[estado] || estado;
 }
 
+function iniciales(nombre = '') {
+  return nombre.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || '').join('').toUpperCase() || 'FN';
+}
+
 export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) {
   const [disponibles, setDisponibles] = useState([]);
   const [asignados, setAsignados] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [trabajoActivo, setTrabajoActivo] = useState(null);
+  const [trabajoParaCompletar, setTrabajoParaCompletar] = useState(null);
+  const [montoCobrado, setMontoCobrado] = useState('');
+  const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [seguimientoTrabajoId, setSeguimientoTrabajoId] = useState(null);
+  const [versionGanancias, setVersionGanancias] = useState(0);
   const [aviso, setAviso] = useState('');
   const [error, setError] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
   const [urgenciaFiltro, setUrgenciaFiltro] = useState('todas');
   const [distanciaFiltro, setDistanciaFiltro] = useState('todas');
   const [pestana, setPestana] = useState(aprobado ? 'disponibles' : 'perfil');
+
+  const cambiarSeguimiento = useCallback((trabajoId, compartir) => {
+    setError('');
+    setSeguimientoTrabajoId((actual) => compartir
+      ? actual || trabajoId
+      : actual === trabajoId ? null : actual);
+  }, []);
+  const seleccionarPestana = useCallback((nuevaPestana) => {
+    if (nuevaPestana !== 'activos') setSeguimientoTrabajoId(null);
+    setPestana(nuevaPestana);
+  }, []);
 
   const obtenerTrabajos = useCallback(async () => {
     if (!aprobado) {
@@ -162,10 +186,16 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
   };
 
   const actualizarEstado = async (trabajo) => {
+    if (trabajo.estado === 'en_proceso') {
+      setTrabajoParaCompletar(trabajo);
+      setMontoCobrado('');
+      setMetodoPago('efectivo');
+      return;
+    }
+
     const siguienteEstado = {
       aceptado: 'en_camino',
-      en_camino: 'en_proceso',
-      en_proceso: 'completado'
+      en_camino: 'en_proceso'
     }[trabajo.estado];
 
     if (!siguienteEstado) return;
@@ -189,6 +219,38 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
     }
   };
 
+  const guardarFinalizacion = async (event) => {
+    event.preventDefault();
+    if (!trabajoParaCompletar) return;
+    const monto = Number(montoCobrado);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setError('Ingresa el monto cobrado para registrar la ganancia.');
+      return;
+    }
+
+    setTrabajoActivo(trabajoParaCompletar.id);
+    setAviso('');
+    setError('');
+    try {
+      const { error: rpcError } = await supabase.rpc('tecnico_completar_trabajo', {
+        p_trabajo_id: trabajoParaCompletar.id,
+        p_monto: monto,
+        p_metodo_pago: metodoPago
+      });
+      if (rpcError) throw rpcError;
+
+      setTrabajoParaCompletar(null);
+      setAviso('Trabajo completado y ganancia registrada.');
+      setVersionGanancias((actual) => actual + 1);
+      setSeguimientoTrabajoId((actual) => actual === trabajoParaCompletar.id ? null : actual);
+      await cargarTrabajos();
+    } catch (actionError) {
+      setError(`No se pudo completar el trabajo: ${actionError.message}`);
+    } finally {
+      setTrabajoActivo(null);
+    }
+  };
+
   const filtrar = useCallback((trabajo) => {
     const urgencia = trabajo.detalles_tecnicos?.urgencia || 'normal';
     return (categoriaFiltro === 'todas' || trabajo.categoria === categoriaFiltro) &&
@@ -205,6 +267,13 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
     () => asignados.filter((trabajo) => trabajo.estado === 'completado').filter(filtrar),
     [asignados, filtrar]
   );
+  const totalCompletados = useMemo(
+    () => asignados.filter((trabajo) => trabajo.estado === 'completado').length,
+    [asignados]
+  );
+  const nombreTecnico = usuario.user_metadata?.nombre || usuario.email?.split('@')[0] || 'Profesional FixNow';
+  const avatarTecnico = usuario.user_metadata?.avatar_url;
+  const avatarValido = typeof avatarTecnico === 'string' && /^https:\/\/\S+$/i.test(avatarTecnico);
   const disponiblesFiltrados = useMemo(
     () => disponibles.filter(filtrar),
     [disponibles, filtrar]
@@ -236,11 +305,35 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
         </button>
       </div>
 
+      <section className="technician-dashboard-overview" aria-label="Resumen profesional del técnico">
+        <div className="technician-dashboard-identity">
+          <div className="technician-dashboard-avatar">
+            {avatarValido ? <img src={avatarTecnico} alt="" referrerPolicy="no-referrer" /> : <span>{iniciales(nombreTecnico)}</span>}
+          </div>
+          <div className="technician-dashboard-welcome">
+            <span className={aprobado ? 'technician-verification verified' : 'technician-verification pending'}>
+              {aprobado ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}{aprobado ? 'Profesional verificado' : 'Perfil en revisión'}
+            </span>
+            <h2>Hola, {nombreTecnico}</h2>
+            <p>{usuario.user_metadata?.titular || 'Tu espacio para administrar trabajos y fortalecer tu perfil profesional.'}</p>
+          </div>
+          <button type="button" className="panel-action-button" onClick={() => seleccionarPestana('perfil')}>
+            Ver perfil profesional
+          </button>
+        </div>
+        <div className="technician-dashboard-metrics">
+          <article><span>Trabajos cercanos</span><strong>{disponibles.length}</strong><small>Solicitudes disponibles</small></article>
+          <article><span>En seguimiento</span><strong>{trabajosActivos.length}</strong><small>Trabajos activos</small></article>
+          <article><span>Trayectoria</span><strong>{totalCompletados}</strong><small>Servicios completados</small></article>
+        </div>
+      </section>
+
       {!aprobado && (
         <p role="status" className="panel-message">
           Tu cuenta está en revisión. Completa tu perfil profesional; al aprobarse podrás consultar y aceptar trabajos.
         </p>
       )}
+      {aprobado && <CentroGanancias actualizarKey={versionGanancias} />}
 
       {pestana !== 'perfil' && <div className="technician-filters">
         <label>
@@ -276,16 +369,16 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
       </div>}
 
       <div className="role-tabs" role="tablist" aria-label="Trabajos del técnico">
-        <RoleTab id="disponibles" selected={pestana} setSelected={setPestana} count={disponibles.length} disabled={!aprobado}>
+        <RoleTab id="disponibles" selected={pestana} setSelected={seleccionarPestana} count={disponibles.length} disabled={!aprobado}>
           Trabajos disponibles
         </RoleTab>
-        <RoleTab id="activos" selected={pestana} setSelected={setPestana} count={trabajosActivos.length} disabled={!aprobado}>
+        <RoleTab id="activos" selected={pestana} setSelected={seleccionarPestana} count={trabajosActivos.length} disabled={!aprobado}>
           Mis trabajos activos
         </RoleTab>
-        <RoleTab id="historial" selected={pestana} setSelected={setPestana} count={trabajosCompletados.length} disabled={!aprobado}>
+        <RoleTab id="historial" selected={pestana} setSelected={seleccionarPestana} count={trabajosCompletados.length} disabled={!aprobado}>
           Historial completado
         </RoleTab>
-        <RoleTab id="perfil" selected={pestana} setSelected={setPestana}>
+        <RoleTab id="perfil" selected={pestana} setSelected={seleccionarPestana}>
           Mi Perfil Profesional
         </RoleTab>
       </div>
@@ -315,8 +408,26 @@ export default function TrabajosTecnico({ usuario, onVolver, aprobado = true }) 
               trabajoActivo={trabajoActivo}
               onAceptar={aceptarTrabajo}
               onActualizar={actualizarEstado}
+              usuarioId={usuario.id}
+              compartiendoUbicacion={seguimientoTrabajoId === trabajo.id}
+              otroSeguimientoActivo={seguimientoTrabajoId !== null && seguimientoTrabajoId !== trabajo.id}
+              onCompartirChange={cambiarSeguimiento}
             />
           ))}
+        </div>
+      )}
+      {trabajoParaCompletar && (
+        <div className="work-payment-modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !trabajoActivo) setTrabajoParaCompletar(null);
+        }}>
+          <form className="work-payment-modal" role="dialog" aria-modal="true" aria-labelledby="work-payment-title" onSubmit={guardarFinalizacion}>
+            <header><div><span className="section-eyebrow">Cierre de servicio</span><h2 id="work-payment-title">Registrar ganancia</h2></div><button type="button" className="icon-button" aria-label="Cerrar formulario" disabled={Boolean(trabajoActivo)} onClick={() => setTrabajoParaCompletar(null)}><X size={18} /></button></header>
+            <p><strong>{trabajoParaCompletar.titulo}</strong><br />Ingresa el monto realmente cobrado antes de cerrar el trabajo.</p>
+            <label><span>Monto cobrado (MXN)</span><div className="work-payment-amount"><Banknote size={16} /><input type="number" min="0.01" max="10000000" step="0.01" required value={montoCobrado} onChange={(event) => setMontoCobrado(event.target.value)} placeholder="0.00" /></div></label>
+            <label><span>Forma de pago</span><select value={metodoPago} onChange={(event) => setMetodoPago(event.target.value)}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option></select></label>
+            <small>Las transferencias quedan como saldo pendiente hasta que el administrador confirme la liquidación.</small>
+            <button type="submit" className="panel-action-button panel-primary-action" disabled={Boolean(trabajoActivo)}><CheckCircle2 size={16} />{trabajoActivo ? 'Guardando…' : 'Completar y registrar'}</button>
+          </form>
         </div>
       )}
     </section>
@@ -338,14 +449,24 @@ function RoleTab({ id, selected, setSelected, count, children, disabled = false 
   );
 }
 
-function TrabajoCard({ trabajo, disponible, trabajoActivo, onAceptar, onActualizar }) {
+function TrabajoCard({
+  trabajo,
+  disponible,
+  trabajoActivo,
+  onAceptar,
+  onActualizar,
+  usuarioId,
+  compartiendoUbicacion,
+  otroSeguimientoActivo,
+  onCompartirChange
+}) {
   const CategoriaIcono = ICONOS_CATEGORIA[trabajo.categoria] || Wrench;
   const urgencia = trabajo.detalles_tecnicos?.urgencia || 'normal';
   const urgente = ['hoy_mismo', 'emergencia_24_7', 'urgente'].includes(urgencia);
   const siguienteAccion = {
     aceptado: 'Marcar en camino',
     en_camino: 'Iniciar trabajo',
-    en_proceso: 'Marcar como terminado'
+    en_proceso: 'Completar y registrar pago'
   }[trabajo.estado];
 
   return (
@@ -388,17 +509,17 @@ function TrabajoCard({ trabajo, disponible, trabajoActivo, onAceptar, onActualiz
             </a>
           )}
           {trabajo.referencias_domicilio && <small>Referencias: {trabajo.referencias_domicilio}</small>}
-          {Number.isFinite(trabajo.detalles_tecnicos?.ubicacion_gps?.lat) &&
-            Number.isFinite(trabajo.detalles_tecnicos?.ubicacion_gps?.lng) && (
-              <a
-                href={`https://www.google.com/maps?q=${trabajo.detalles_tecnicos.ubicacion_gps.lat},${trabajo.detalles_tecnicos.ubicacion_gps.lng}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Abrir ubicación GPS en Maps
-              </a>
-            )}
         </div>
+      )}
+      {!disponible && ESTADOS_ACTIVOS.includes(trabajo.estado) && (
+        <MapaSeguimiento
+          trabajo={trabajo}
+          modo="tecnico"
+          tecnicoId={usuarioId}
+          compartiendo={compartiendoUbicacion}
+          onCompartirChange={onCompartirChange}
+          disabled={otroSeguimientoActivo}
+        />
       )}
 
       {disponible ? (
